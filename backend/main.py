@@ -218,6 +218,23 @@ async def text_to_speech(
             "message": f"TTS generation failed: {str(e)}",
             "audio_data": None
         }
+@app.post("/api/voice/chat")
+async def voice_chat(user_id: str, session_id: str, message: str):
+    """Placeholder chat endpoint"""
+    return {
+        "status": "success",
+        "response": "This is a placeholder response. Connect to your LLM here.",
+        "session_id": session_id
+    }
+
+@app.post("/api/voice/speak")
+async def text_to_speech(user_id: str, session_id: str, text: str):
+    """ElevenLabs TTS endpoint"""
+    return {
+        "status": "success",
+        "audio_url": "https://example.com/audio.mp3",
+        "message": "Text-to-speech conversion"
+    }
 
 if __name__ == "__main__":
     print("🚀 Starting Hermes API server...")
