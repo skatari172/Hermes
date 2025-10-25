@@ -4,7 +4,7 @@ import { auth } from '../config/firebase';
 
 // Create axios instance with base configuration
 const apiClient: AxiosInstance = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_URL || 'http://10.127.199.242:8000',
+  baseURL: process.env.EXPO_PUBLIC_URL || 'http://10.127.199.242:8000',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
