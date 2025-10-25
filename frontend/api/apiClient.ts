@@ -107,6 +107,14 @@ export const userAPI = {
       },
     });
   },
+  uploadProfilePhoto: (formData: any) => {
+    return apiClient.post('/user/profile/photo', formData, {
+      headers: {
+        // Let axios/React Native set multipart boundary; do not set full content-type if possible
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
 };
 
 export default apiClient;
