@@ -9,6 +9,11 @@ import uvicorn
 import os
 # from agents.geo_agent import router as geo_router
 # from agents.context_agent import router as wiki_router
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = get_logger(__name__)
 
