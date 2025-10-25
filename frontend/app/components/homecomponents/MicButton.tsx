@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import { voiceAPI } from '../../../api/apiClient';
+// import { voiceAPI } from '../../../api/apiClient'; // Not used in this component
 
 interface MicButtonProps {
   onAudioRecorded: (audioUri: string) => void;
@@ -43,7 +43,7 @@ export default function MicButton({ onAudioRecorded, onTranscriptionComplete }: 
             break;
           }
         } catch (error) {
-          console.log(`❌ Failed to connect to ${url}:`, error.message);
+          console.log(`❌ Failed to connect to ${url}:`, (error as Error).message);
         }
       }
       console.log(`🎯 Final backend URL: ${backendURL}`);
@@ -52,10 +52,23 @@ export default function MicButton({ onAudioRecorded, onTranscriptionComplete }: 
       const formData = new FormData();
       
       // For React Native, we can directly append the URI as a file
+      // Handle different audio formats (.m4a, .caf, .wav)
+      const fileExtension = audioUri.split('.').pop()?.toLowerCase();
+      let mimeType = 'audio/wav';
+      let fileName = 'recording.wav';
+      
+      if (fileExtension === 'm4a') {
+        mimeType = 'audio/mp4';
+        fileName = 'recording.m4a';
+      } else if (fileExtension === 'caf') {
+        mimeType = 'audio/x-caf';
+        fileName = 'recording.caf';
+      }
+      
       formData.append('audio_file', {
         uri: audioUri,
-        type: 'audio/wav',
-        name: 'recording.wav',
+        type: mimeType,
+        name: fileName,
       } as any);
       formData.append('user_id', 'demo_user');
       formData.append('session_id', 'demo_session');
