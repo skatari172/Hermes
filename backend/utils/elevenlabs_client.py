@@ -194,13 +194,22 @@ class ElevenLabsClient:
                 raise Exception(f"Temp file is not readable: {e}")
             
             try:
-                # Try using the file upload method instead
-                # First upload the file, then convert
+                # Try using the correct ElevenLabs STT API method
                 with open(temp_file_path, 'rb') as audio_file:
-                    result = self.client.speech_to_text.convert(
-                        file=audio_file,
-                        model_id="scribe_v1"
-                    )
+                    # Try different API methods to find the correct one
+                    try:
+                        # Method 1: Direct convert
+                        result = self.client.speech_to_text.convert(
+                            file=audio_file,
+                            model_id="scribe_v1"
+                        )
+                    except AttributeError:
+                        # Method 2: Alternative API call
+                        audio_file.seek(0)  # Reset file pointer
+                        result = self.client.speech_to_text.convert(
+                            audio_file,
+                            model_id="scribe_v1"
+                        )
                 
                 print(f"✅ STT Success: {result.text}")
                 
