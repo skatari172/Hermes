@@ -59,11 +59,16 @@ export default function HomeScreen() {
   const handleAudioRecorded = (audioUri: string) => {
     const newMessage = {
       id: Date.now().toString(),
-      text: '🎤 Audio messag recorded',
+      text: '🎤 Audio message recorded',
       timestamp: new Date(),
       isUser: true
     };
     setMessages(prev => [...prev, newMessage]);
+  };
+
+  const handleTranscriptionComplete = (transcribedText: string) => {
+    // Put the transcribed text into the text input
+    setInputText(transcribedText);
   };
 
 
@@ -153,7 +158,10 @@ export default function HomeScreen() {
           placeholder="Type a message.."
           maxLength={500}
         />
-        <MicButton onAudioRecorded={handleAudioRecorded} />
+        <MicButton 
+          onAudioRecorded={handleAudioRecorded} 
+          onTranscriptionComplete={handleTranscriptionComplete}
+        />
       </View>
       </KeyboardAvoidingView>
     </View>

@@ -8,7 +8,7 @@ def initialize_firebase():
         firebase_admin.initialize_app(cred)
         print("Firebase initialized successfully")
     else:
-        print("Firebase already initialized")
+        print("Firebase already initialized").gitignore
 
 # Initialize Firebase
 initialize_firebase()
