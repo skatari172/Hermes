@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils.firebase_client import initialize_firebase  # Initialize Firebase first
 from routes import user_routes
 import uvicorn
+from agents.geo_agent import router as geo_router
+from agents.context_agent import router as wiki_router
 import os
 
 app = FastAPI(title="Hermes API", description="Personal AI Assistant API")
@@ -18,6 +20,8 @@ app.add_middleware(
 
 # Register routers
 app.include_router(user_routes.router)
+app.include_router(geo_router)
+app.include_router(wiki_router)
 
 @app.get("/")
 def root():
@@ -235,6 +239,8 @@ async def text_to_speech(user_id: str, session_id: str, text: str):
         "audio_url": "https://example.com/audio.mp3",
         "message": "Text-to-speech conversion"
     }
+
+
 
 if __name__ == "__main__":
     print("🚀 Starting Hermes API server...")

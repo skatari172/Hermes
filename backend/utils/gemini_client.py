@@ -1,5 +1,5 @@
 # Gemini Vision/Text wrappers
-import google.generativeai as genai
+import google.generativeai as genai  # pyright: ignore[reportMissingImports]
 import os
 from typing import Optional
 
