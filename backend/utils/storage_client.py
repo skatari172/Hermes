@@ -157,6 +157,7 @@ class StorageClient:
                 logger.info(f"✅ Image processed, new size: {len(image_data)} bytes")
             
             # Determine file extension
+            # Determine file extension
             extension_map = {
                 "image/jpeg": "jpg",
                 "image/jpg": "jpg", 
@@ -164,7 +165,13 @@ class StorageClient:
                 "image/webp": "webp"
             }
             file_extension = extension_map.get(content_type, "jpg")
-            
+
+            # Use a deterministic uploads path for chat images: uploads/{user_id}/{timestamp}_{uuid}.{ext}
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S%f")
+            unique_id = str(uuid.uuid4())[:8]
+            filename = f"{timestamp}_{unique_id}.{file_extension}"
+            storage_path = f"uploads/{user_id}/{filename}"
+
             # Try Firebase Storage first
             if self.bucket and not self.use_local_storage:
                 try:
@@ -172,34 +179,33 @@ class StorageClient:
                     storage_path = f"uploads/{user_id}/{uuid.uuid4()}.{file_extension}"
                     logger.info(f"📁 Firebase storage path: {storage_path}")
                     
-                    # Upload to Firebase Storage
+                    # Upload to Firebase Storage at the deterministic path
                     blob = self.bucket.blob(storage_path)
                     logger.info(f"🔄 Uploading to Firebase Storage...")
-                    
                     blob.upload_from_string(
                         image_data,
                         content_type=content_type
                     )
-                    
                     logger.info(f"✅ File uploaded successfully to {storage_path}")
-                    
-                    # Make the blob publicly accessible
-                    logger.info("🔄 Making blob publicly accessible...")
-                    blob.make_public()
-                    
-                    # Get public URL
-                    public_url = blob.public_url
-                    
-                    logger.info(f"✅ Firebase upload successful: {storage_path}")
-                    logger.info(f"🔗 Public URL: {public_url}")
-                    
-                    return public_url
-                    
+
+                    # Make the blob publicly accessible if possible
+                    try:
+                        blob.make_public()
+                    except Exception:
+                        logger.warning("Could not make blob public; it may require signed URLs or bucket rules")
+
+                    public_url = getattr(blob, 'public_url', None)
+                    if public_url:
+                        logger.info(f"✅ Firebase upload successful: {public_url}")
+                        return public_url
+                    else:
+                        logger.info("🔗 Firebase upload returned no public_url; returning storage path")
+                        return storage_path
+
                 except Exception as firebase_error:
                     logger.error(f"❌ Firebase Storage upload failed: {str(firebase_error)}")
                     logger.warning("🔄 Falling back to local storage")
-                    
-                    # Check specific error types for debugging
+                    # Additional debugging hints
                     if "403" in str(firebase_error) or "Forbidden" in str(firebase_error):
                         logger.error("❌ Firebase Storage permission denied - check service account permissions")
                     elif "404" in str(firebase_error) or "not found" in str(firebase_error).lower():

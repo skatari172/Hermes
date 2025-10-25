@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, Header
+from fastapi import FastAPI, UploadFile, File, Form, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from routes import journal_routes
@@ -151,6 +151,7 @@ async def transcribe_audio(
 
 @app.post("/api/upload/image")
 async def upload_image(
+    request: Request,
     image: UploadFile = File(...),
     user_id: str = Form(...),
     session_id: str = Form(default="demo_session"),
@@ -198,6 +199,16 @@ async def upload_image(
             }
         
         logger.info(f"✅ Image uploaded to storage: {photo_url}")
+        # Normalize local URLs so mobile clients can reach the server-hosted file
+        try:
+            from urllib.parse import urlparse, urljoin
+            parsed = urlparse(photo_url)
+            if parsed.hostname in ('localhost', '127.0.0.1'):
+                base = str(request.base_url)
+                photo_url = urljoin(base, parsed.path.lstrip('/'))
+                logger.info(f"🔁 Normalized photo_url for client reachability: {photo_url}")
+        except Exception:
+            logger.warning("Could not normalize photo_url; leaving as-is")
         
         # Analyze image with perception agent
         base64_image = base64.b64encode(image_data).decode('utf-8')
