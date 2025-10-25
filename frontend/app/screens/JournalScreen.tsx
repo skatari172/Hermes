@@ -115,11 +115,6 @@ export default function JournalScreen() {
           // Close modal and reset animations
           handleClosePinDetail();
           
-          // Reset zoom to campus view
-          if (mapRef) {
-            mapRef.animateToRegion(ucfCampusRegion, 1000);
-          }
-          
           // Reset animation values
           modalTranslateY.setValue(0);
           modalOpacity.setValue(1);
@@ -164,9 +159,6 @@ export default function JournalScreen() {
       // Only refresh if we already have pins (avoid refreshing on initial load)
       if (droppedPins.length > 0) {
         refreshPins();
-        if (mapRef) {
-          mapRef.animateToRegion(ucfCampusRegion, 1000);
-        }
       }
     });
     return unsubscribe;
@@ -189,29 +181,6 @@ export default function JournalScreen() {
       keyboardWillShow.remove();
     };
   }, [pinPhoto]);
-
-  // UCF Campus boundaries and initial region
-  const ucfCampusRegion = {
-    latitude: 28.6024,
-    longitude: -81.2001,
-    latitudeDelta: 0.01, // Covers most of UCF campus
-    longitudeDelta: 0.01,
-  };
-
-  // Define UCF campus boundaries
-  const ucfBounds = {
-    northEast: {
-      latitude: 28.6150,
-      longitude: -81.1850,
-    },
-    southWest: {
-      latitude: 28.5900,
-      longitude: -81.2150,
-    },
-  };
-
-
- 
 
   const handleLongPress = (event: any) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
@@ -503,7 +472,6 @@ export default function JournalScreen() {
             <MapView
               ref={setMapRef}
               style={StyleSheet.absoluteFill}
-              initialRegion={ucfCampusRegion}
               showsUserLocation={true}
               onLongPress={handleLongPress}
               zoomEnabled={true}
@@ -760,11 +728,6 @@ export default function JournalScreen() {
         transparent={true}
         onRequestClose={() => {
           handleClosePinDetail();
-          
-          // Reset zoom to campus view when closing modal
-          if (mapRef) {
-            mapRef.animateToRegion(ucfCampusRegion, 1000);
-          }
         }}
       >
         <View style={journalStyles.pinDetailModalOverlay}>
@@ -811,11 +774,6 @@ export default function JournalScreen() {
                     </View>
                     <TouchableOpacity onPress={() => {
                       handleClosePinDetail();
-                      
-                      // Reset zoom to campus view when closing modal
-                      if (mapRef) {
-                        mapRef.animateToRegion(ucfCampusRegion, 1000);
-                      }
                     }} style={journalStyles.closeButton}>
                       <MaterialCommunityIcons name="close" size={24} color="#fff" />
                     </TouchableOpacity>
@@ -887,11 +845,6 @@ export default function JournalScreen() {
                         const success = await handleNavigateToPin(location, currentPin.latitude, currentPin.longitude);
                         if (success) {
                           setShowPinDetailModal(false);
-                          
-                          // Reset zoom to campus view when opening directions
-                          if (mapRef) {
-                            mapRef.animateToRegion(ucfCampusRegion, 1000);
-                          }
                         }
                       }}
                     >
