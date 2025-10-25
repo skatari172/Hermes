@@ -4,8 +4,8 @@ List available Gemini models
 """
 
 import os
-import google.generativeai as genai
-from dotenv import load_dotenv
+import google.generativeai as genai  # pyright: ignore[reportMissingImports]
+from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
 
 # Load environment variables
 load_dotenv()

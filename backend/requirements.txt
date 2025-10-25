@@ -117,7 +117,6 @@ apscheduler==3.10.4
 
 # --- Optional NLP / summarization helpers ---
 nltk==3.9
-langchain-google-adk==0.1.8       # ADK-style runner + A2A message bus
 
 # --- Testing / development ---
 pytest==8.3.2
