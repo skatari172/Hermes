@@ -15,7 +15,7 @@ export default function AppNavigator() {
     );
   }
 
-  return <BottomTabsNavigator /> ;
+  return user ? <BottomTabsNavigator /> : <AuthNavigator />;
 }
 
 const styles = StyleSheet.create({
