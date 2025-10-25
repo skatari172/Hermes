@@ -1,25 +1,60 @@
-# TODO: FastAPI entrypoint + ADK bus setup
-import os
-from pydantic import BaseSettings
+"""
+FastAPI entrypoint for Hermes AI Cultural Companion.
+Sets up the server and includes all routes.
+"""
 
-class Settings(BaseSettings):
-    # Firebase Configuration
-    firebase_project_id: str = os.getenv("FIREBASE_PROJECT_ID", "hermes-521f9")
-    firebase_private_key: str = os.getenv("FIREBASE_PRIVATE_KEY", "REPLACE_WITH_YOUR_FIREBASE_PRIVATE_KEY")
-    firebase_client_email: str = os.getenv("FIREBASE_CLIENT_EMAIL", "REPLACE_WITH_YOUR_FIREBASE_CLIENT_EMAIL")
-    firebase_private_key_id: str = os.getenv("FIREBASE_PRIVATE_KEY_ID", "REPLACE_WITH_YOUR_FIREBASE_PRIVATE_KEY_ID")
-    firebase_client_id: str = os.getenv("FIREBASE_CLIENT_ID", "REPLACE_WITH_YOUR_FIREBASE_CLIENT_ID")
-    firebase_auth_uri: str = os.getenv("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth")
-    firebase_token_uri: str = os.getenv("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token")
-    
-    # API Configuration
-    api_host: str = os.getenv("API_HOST", "0.0.0.0")
-    api_port: int = int(os.getenv("API_PORT", "8000"))
-    
-    # CORS Configuration
-    allowed_origins: list = ["http://localhost:3000", "http://localhost:8081", "exp://192.168.1.100:8081"]
-    
-    class Config:
-        env_file = ".env"
+from config.settings import get_settings
+settings = get_settings()
 
-settings = Settings()
+# FastAPI setup
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="Hermes AI Cultural Companion",
+    description="An intelligent travel companion for cultural experiences",
+    version="1.0.0"
+)
+
+# Add CORS middleware - ALLOW EVERYTHING
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=False,  # Disable credentials
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
+
+@app.get("/")
+async def root():
+    """Root endpoint with API information."""
+    return {
+        "message": "Welcome to Hermes AI Cultural Companion",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "Hermes AI Cultural Companion"
+    }
+
+# Import and include the voice routes
+from routes.voice_routes import router as voice_router
+app.include_router(voice_router)
+
+if __name__ == "__main__":
+    import uvicorn
+    print(f"🚀 Starting Hermes AI Cultural Companion on {settings.backend_host}:{settings.backend_port}")
+    print(f"📚 API docs available at http://{settings.backend_host}:{settings.backend_port}/docs")
+    uvicorn.run(
+        "main:app",
+        host=settings.backend_host,
+        port=settings.backend_port,
+        reload=settings.debug,
+        log_level="info"
+    )
+

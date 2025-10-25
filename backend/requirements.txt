@@ -27,6 +27,9 @@ apscheduler==3.10.4
 nltk==3.9
    # ADK-style runner + A2A message bus
 
+# --- Voice interaction ---
+elevenlabs==1.4.0                 # ElevenLabs TTS API
+
 # --- Testing / development ---
 pytest==8.3.2
 pytest-asyncio==0.23.8

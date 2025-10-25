@@ -249,7 +249,8 @@ You'll need to obtain API keys from:
 1. **Firebase**: Create a project at [Firebase Console](https://console.firebase.google.com/)
 2. **Google Maps**: Get API key from [Google Cloud Console](https://console.cloud.google.com/)
 3. **Gemini**: Get API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-4. **Optional**: Google Translate, Twilio for future features
+4. **ElevenLabs**: Get API key from [ElevenLabs](https://elevenlabs.io/) for text-to-speech
+5. **Optional**: Google Translate, Twilio for future features
 
 ### 10. Next Steps
 
