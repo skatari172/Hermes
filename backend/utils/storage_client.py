@@ -65,17 +65,17 @@ class StorageClient:
             # Create user directory
             user_dir = os.path.join(self.local_storage_dir, user_id)
             os.makedirs(user_dir, exist_ok=True)
-            
-            # Generate filename
+
+            # Generate filename (unique)
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             unique_id = str(uuid.uuid4())[:8]
             filename = f"{timestamp}_{unique_id}.{file_extension}"
-            
+
             # Save file
             file_path = os.path.join(user_dir, filename)
             with open(file_path, 'wb') as f:
                 f.write(image_data)
-            
+
             # Return local URL (assuming backend serves static files)
             local_url = f"http://localhost:8000/uploads/{user_id}/{filename}"
             logger.info(f"💾 Image saved locally: {file_path}")
@@ -168,8 +168,8 @@ class StorageClient:
             # Try Firebase Storage first
             if self.bucket and not self.use_local_storage:
                 try:
-                    # Generate storage path
-                    storage_path = self._generate_image_path(user_id, file_extension)
+                    # Generate storage path under uploads/user_id/
+                    storage_path = f"uploads/{user_id}/{uuid.uuid4()}.{file_extension}"
                     logger.info(f"📁 Firebase storage path: {storage_path}")
                     
                     # Upload to Firebase Storage
@@ -305,6 +305,65 @@ class StorageClient:
             
         except Exception as e:
             logger.error(f"❌ Failed to get image metadata: {str(e)}")
+            return None
+
+    # -------------------------
+    # Profile image helpers
+    # -------------------------
+    def _save_profile_image_locally(self, image_data: bytes, user_id: str, file_extension: str = 'jpg') -> Optional[str]:
+        """Save profile image deterministically to uploads/profile/{uid}.jpg and return URL."""
+        try:
+            profile_dir = os.path.join(self.local_storage_dir, 'profile')
+            os.makedirs(profile_dir, exist_ok=True)
+
+            filename = f"{user_id}.{file_extension}"
+            file_path = os.path.join(profile_dir, filename)
+            with open(file_path, 'wb') as f:
+                f.write(image_data)
+
+            local_url = f"http://localhost:8000/uploads/profile/{filename}"
+            logger.info(f"💾 Profile image saved locally: {file_path}")
+            return local_url
+        except Exception as e:
+            logger.error(f"❌ Failed to save profile image locally: {str(e)}")
+            return None
+
+    async def upload_profile_image(self, image_data: bytes, user_id: str, content_type: str = 'image/jpeg') -> Optional[str]:
+        """Upload/replace profile image to Firebase Storage or local filesystem at uploads/profile/{uid}.jpg."""
+        try:
+            # Process and determine extension
+            extension_map = {
+                'image/jpeg': 'jpg',
+                'image/jpg': 'jpg',
+                'image/png': 'png',
+                'image/webp': 'webp'
+            }
+            file_extension = extension_map.get(content_type, 'jpg')
+
+            # Try Firebase Storage first
+            if self.bucket and not self.use_local_storage:
+                try:
+                    storage_path = f"uploads/profile/{user_id}.{file_extension}"
+                    blob = self.bucket.blob(storage_path)
+                    blob.upload_from_string(image_data, content_type=content_type)
+                    # Make public and return URL
+                    try:
+                        blob.make_public()
+                    except Exception:
+                        # Some buckets don't allow make_public; still return signed url behavior if needed
+                        pass
+                    public_url = blob.public_url
+                    logger.info(f"✅ Uploaded profile image to Firebase: {storage_path}")
+                    return public_url
+                except Exception as e:
+                    logger.error(f"❌ Firebase profile upload failed: {str(e)}")
+                    logger.warning("🔄 Falling back to local profile storage")
+
+            # Local fallback: save deterministically
+            return self._save_profile_image_locally(image_data, user_id, file_extension)
+
+        except Exception as e:
+            logger.error(f"❌ upload_profile_image failed: {str(e)}")
             return None
 
 # Global storage client instance
