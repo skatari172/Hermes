@@ -8,7 +8,7 @@ const apiClient: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 });
-npm install axios expo-image-picker expo-camera expo-speech firebase
+
 // Request interceptor to add auth token
 apiClient.interceptors.request.use(
   (config) => {
