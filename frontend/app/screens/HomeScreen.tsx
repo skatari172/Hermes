@@ -245,9 +245,196 @@ export default function HomeScreen() {
     setMessages(prev => [...prev, newMessage]);
   };
 
-  const handleTranscriptionComplete = (transcribedText: string) => {
+  const handleTranscriptionComplete = async (transcribedText: string) => {
     // Put the transcribed text into the text input
     setInputText(transcribedText);
+    
+    // Auto-send the message if there's transcribed text
+    if (transcribedText.trim()) {
+      // Use the same logic as handleSubmitMessage but with the transcribed text
+      const userMessage = {
+        id: Date.now().toString(),
+        text: transcribedText.trim(),
+        timestamp: new Date(),
+        isUser: true
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setInputText(''); // Clear the input
+  
+      try {
+        // Auto-detect backend URL (same logic as handleSubmitMessage)
+        const possibleURLs = [
+          'http://10.127.217.215:8000',
+          'http://localhost:8000',
+          'http://127.0.0.1:8000',
+          'http://10.0.2.2:8000',
+          'http://192.168.1.100:8000',
+          'http://192.168.0.100:8000',
+          'http://192.168.1.101:8000',
+          'http://192.168.0.101:8000',
+        ];
+  
+        let backendURL = 'http://localhost:8000';
+        for (const url of possibleURLs) {
+          try {
+            const healthCheck = await fetch(`${url}/health`);
+            if (healthCheck.ok) {
+              backendURL = url;
+              break;
+            }
+          } catch (error) {
+            // Continue to next URL
+          }
+        }
+  
+        // Send message to backend
+        const formData = new FormData();
+        formData.append('message', transcribedText.trim());
+        formData.append('user_id', 'demo_user');
+        formData.append('session_id', 'demo_session');
+  
+        const response = await fetch(`${backendURL}/api/chat`, {
+          method: 'POST',
+          body: formData,
+        });
+  
+        if (response.ok) {
+          const result = await response.json();
+          if (result.status === 'success') {
+            // Add bot response to messages
+            const botMessage = {
+              id: (Date.now() + 1).toString(),
+              text: result.response,
+              timestamp: new Date(),
+              isUser: false
+            };
+            setMessages(prev => [...prev, botMessage]);
+  
+            // Handle TTS if enabled and audio data is available
+            console.log('TTS Debug: ttsEnabled =', ttsEnabled);
+            console.log('TTS Debug: result.tts_audio_data exists =', !!result.tts_audio_data);
+            console.log('TTS Debug: result.tts_audio_data length =', result.tts_audio_data?.length || 0);
+            
+            if (ttsEnabled && result.tts_audio_data) {
+              try {
+                console.log('TTS Debug: Processing audio data...');
+                console.log('TTS Debug: Audio data type:', typeof result.tts_audio_data);
+                console.log('TTS Debug: Audio data first 100 chars:', result.tts_audio_data.substring(0, 100));
+                
+                const audioData = result.tts_audio_data;
+                
+                // Check if FileSystem is available
+                console.log('TTS Debug: FileSystem available:', !!FileSystem);
+                console.log('TTS Debug: FileSystem.documentDirectory:', FileSystem.documentDirectory);
+                console.log('TTS Debug: FileSystem.EncodingType available:', !!FileSystem.EncodingType);
+                
+                if (!FileSystem || !FileSystem.EncodingType) {
+                  console.log('TTS Debug: expo-file-system not available, trying alternative approach...');
+                  
+                  // Fallback: Try using data URL with expo-av directly
+                  const dataUrl = `data:audio/mp3;base64,${audioData}`;
+                  console.log('TTS Debug: Using data URL approach');
+                  
+                  const { sound } = await Audio.Sound.createAsync(
+                    { uri: dataUrl },
+                    { shouldPlay: true }
+                  );
+                  
+                  console.log('TTS Debug: Audio started playing via data URL');
+                  
+                  sound.setOnPlaybackStatusUpdate((status) => {
+                    console.log('TTS Debug: Playback status update:', status);
+                    if (status.isLoaded && status.didJustFinish) {
+                      console.log('TTS Debug: Audio finished playing');
+                      sound.unloadAsync();
+                    }
+                  });
+                  
+                  return; // Exit early since we used the fallback
+                }
+                
+                // Write base64 audio data to a temporary file
+                const fileName = `tts_audio_${Date.now()}.mp3`;
+                const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+                
+                console.log('TTS Debug: Writing audio to file:', fileUri);
+                console.log('TTS Debug: Audio data length:', audioData.length);
+                
+                await FileSystem.writeAsStringAsync(fileUri, audioData, {
+                  encoding: FileSystem.EncodingType.Base64,
+                });
+                
+                console.log('TTS Debug: Audio file written successfully');
+                
+                // Check if file exists
+                const fileInfo = await FileSystem.getInfoAsync(fileUri);
+                console.log('TTS Debug: File exists:', fileInfo.exists);
+                console.log('TTS Debug: File size:', fileInfo.size);
+                
+                // Check if Audio is available
+                console.log('TTS Debug: Audio available:', !!Audio);
+                console.log('TTS Debug: Audio.Sound available:', !!Audio.Sound);
+                
+                // Play the audio file using expo-av
+                console.log('TTS Debug: Creating audio sound...');
+                const { sound } = await Audio.Sound.createAsync(
+                  { uri: fileUri },
+                  { shouldPlay: true }
+                );
+                
+                console.log('TTS Debug: Audio sound created successfully');
+                console.log('TTS Debug: Audio started playing');
+                
+                // Clean up the file after playback
+                sound.setOnPlaybackStatusUpdate((status) => {
+                  console.log('TTS Debug: Playback status update:', status);
+                  if (status.isLoaded && status.didJustFinish) {
+                    console.log('TTS Debug: Audio finished playing');
+                    sound.unloadAsync();
+                    FileSystem.deleteAsync(fileUri, { idempotent: true });
+                  }
+                });
+                
+              } catch (error) {
+                console.error('TTS Debug: TTS playback error:', error);
+                console.error('TTS Debug: Error stack:', error.stack);
+                console.error('TTS Debug: Error message:', error.message);
+              }
+            } else {
+              console.log('TTS Debug: TTS not triggered - ttsEnabled:', ttsEnabled, 'audioData exists:', !!result.tts_audio_data);
+            }
+          } else {
+            // Add error message
+            const errorMessage = {
+              id: (Date.now() + 1).toString(),
+              text: result.message || 'Sorry, I encountered an error.',
+              timestamp: new Date(),
+              isUser: false
+            };
+            setMessages(prev => [...prev, errorMessage]);
+          }
+        } else {
+          // Add error message for network issues
+          const errorMessage = {
+            id: (Date.now() + 1).toString(),
+            text: 'Sorry, I cannot connect to the server right now.',
+            timestamp: new Date(),
+            isUser: false
+          };
+          setMessages(prev => [...prev, errorMessage]);
+        }
+      } catch (error) {
+        console.error('Auto-send error:', error);
+        // Add error message
+        const errorMessage = {
+          id: (Date.now() + 1).toString(),
+          text: 'Sorry, something went wrong. Please try again.',
+          timestamp: new Date(),
+          isUser: false
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    }
   };
 
   const handleTtsForMessage = async (messageText: string) => {
