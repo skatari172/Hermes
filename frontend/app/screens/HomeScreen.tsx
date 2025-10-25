@@ -4,12 +4,37 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraButton, MicButton, TextInput } from '../components/homecomponents';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
+import * as Location from 'expo-location';
+import apiClient from '../../api/apiClient';
 
 export default function HomeScreen() {
   const [messages, setMessages] = useState<Array<{id: string, text: string, timestamp: Date, isUser: boolean, imageUri?: string}>>([]);
   const [inputText, setInputText] = useState('');
   const [ttsEnabled, setTtsEnabled] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Request location permission and get current location
+  useEffect(() => {
+    (async () => {
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('Location permission denied');
+          return;
+        }
+        
+        let location = await Location.getCurrentPositionAsync({});
+        setCurrentLocation({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude
+        });
+        console.log('📍 Current location set:', location.coords.latitude, location.coords.longitude);
+      } catch (error) {
+        console.error('Error getting location:', error);
+      }
+    })();
+  }, []);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -74,19 +99,26 @@ export default function HomeScreen() {
           }
         }
 
-        // Send message to backend
+        // Send message to backend using apiClient with automatic auth
         const formData = new FormData();
         formData.append('message', messageText);
-        formData.append('user_id', 'demo_user');
-        formData.append('session_id', 'demo_session');
+        formData.append('session_id', 'chat_session');
+        
+        // Add current location if available
+        if (currentLocation) {
+          formData.append('latitude', currentLocation.latitude.toString());
+          formData.append('longitude', currentLocation.longitude.toString());
+          console.log('📍 Sending location with message:', currentLocation);
+        }
 
-        const response = await fetch(`${backendURL}/api/chat`, {
-          method: 'POST',
-          body: formData,
+        const response = await apiClient.post('/api/chat', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         });
 
-        if (response.ok) {
-          const result = await response.json();
+        if (response.status === 200) {
+          const result = response.data;
           if (result.status === 'success') {
             // Add bot response to messages
             const botMessage = {
@@ -224,15 +256,110 @@ export default function HomeScreen() {
     }
   };
 
-  const handleImageCaptured = (imageUri: string) => {
-    const newMessage = {
+  const handleImageCaptured = async (imageUri: string) => {
+    // Add user image message to chat immediately
+    const userImageMessage = {
       id: Date.now().toString(),
       text: '',
       timestamp: new Date(),
       isUser: true,
       imageUri: imageUri
     };
-    setMessages(prev => [...prev, newMessage]);
+    setMessages(prev => [...prev, userImageMessage]);
+
+    try {
+      // Auto-detect backend URL (same logic as handleSubmitMessage)
+      const possibleURLs = [
+        process.env.EXPO_PUBLIC_API_URL,
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'http://10.0.2.2:8000',
+        'http://192.168.1.100:8000',
+        'http://192.168.0.100:8000',
+        'http://192.168.1.101:8000',
+        'http://192.168.0.101:8000',
+      ];
+
+      let backendURL = 'http://localhost:8000';
+      for (const url of possibleURLs) {
+        try {
+          const healthCheck = await fetch(`${url}/health`);
+          if (healthCheck.ok) {
+            backendURL = url;
+            break;
+          }
+        } catch (error) {
+          // Continue to next URL
+        }
+      }
+
+      // Convert image URI to blob for upload
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+
+      // Create FormData for image upload
+      const formData = new FormData();
+      formData.append('image', {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: 'upload.jpg',
+      } as any);
+      formData.append('user_id', 'demo_user');
+      formData.append('session_id', 'demo_session');
+      formData.append('message', 'What do you see in this image?');
+
+      // Upload image and get analysis
+      const uploadResponse = await fetch(`${backendURL}/api/upload/image`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (uploadResponse.ok) {
+        const result = await uploadResponse.json();
+        if (result.status === 'success') {
+          // Add bot response with image analysis
+          const botMessage = {
+            id: (Date.now() + 1).toString(),
+            text: result.conversation_response,
+            timestamp: new Date(),
+            isUser: false
+          };
+          setMessages(prev => [...prev, botMessage]);
+
+          // Handle TTS if enabled and audio data is available
+          if (ttsEnabled && result.tts_audio_data) {
+            try {
+              // For now, we'll skip TTS for image responses to avoid FileSystem issues
+              // This can be implemented later with proper FileSystem API
+              console.log('🔊 TTS audio available but skipped for image responses');
+            } catch (ttsError) {
+              console.warn('TTS playback failed:', ttsError);
+            }
+          }
+
+          console.log('🎯 Image uploaded and analyzed successfully');
+          console.log('📋 Perception analysis:', result.perception_analysis?.scene_summary || 'No summary');
+        } else {
+          throw new Error(result.message || 'Image upload failed');
+        }
+      } else {
+        throw new Error(`Upload failed with status: ${uploadResponse.status}`);
+      }
+
+    } catch (error) {
+      console.error('❌ Image upload error:', error);
+      // Add error message to chat
+      const errorMessage = {
+        id: (Date.now() + 2).toString(),
+        text: `Sorry, I couldn't process your image. Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date(),
+        isUser: false
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    }
   };
 
   const handleAudioRecorded = (audioUri: string) => {
@@ -287,19 +414,26 @@ export default function HomeScreen() {
           }
         }
   
-        // Send message to backend
+        // Send message to backend using apiClient with automatic auth
         const formData = new FormData();
         formData.append('message', transcribedText.trim());
-        formData.append('user_id', 'demo_user');
-        formData.append('session_id', 'demo_session');
+        formData.append('session_id', 'voice_session');
+        
+        // Add current location if available
+        if (currentLocation) {
+          formData.append('latitude', currentLocation.latitude.toString());
+          formData.append('longitude', currentLocation.longitude.toString());
+          console.log('📍 Sending location with voice message:', currentLocation);
+        }
   
-        const response = await fetch(`${backendURL}/api/chat`, {
-          method: 'POST',
-          body: formData,
+        const response = await apiClient.post('/api/chat', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         });
   
-        if (response.ok) {
-          const result = await response.json();
+        if (response.status === 200) {
+          const result = response.data;
           if (result.status === 'success') {
             // Add bot response to messages
             const botMessage = {
