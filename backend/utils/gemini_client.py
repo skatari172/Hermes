@@ -39,3 +39,11 @@ class GeminiClient:
         except Exception as e:
             print(f"Connection test failed: {str(e)}")
             return False
+
+
+# Create singleton instance
+try:
+    gemini_client = GeminiClient()
+except ValueError as e:
+    print(f"Warning: {str(e)}")
+    gemini_client = None

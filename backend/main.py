@@ -129,23 +129,95 @@ async def transcribe_audio(
             "transcribed_text": ""
         }
 
-@app.post("/api/voice/chat")
-async def voice_chat(user_id: str, session_id: str, message: str):
-    """Placeholder chat endpoint"""
-    return {
-        "status": "success",
-        "response": "This is a placeholder response. Connect to your LLM here.",
-        "session_id": session_id
-    }
+@app.post("/api/chat")
+async def chat_with_hermes(
+    message: str = Form(...),
+    user_id: str = Form(default="demo_user"),
+    session_id: str = Form(default="demo_session")
+):
+    """Chat with Hermes AI - processes message and returns response with optional TTS"""
+    try:
+        from agents.conversation_agent import conversation_agent
+        
+        # Process message through conversation agent
+        result = await conversation_agent.process_message(
+            user_message=message,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        response_data = {
+            "status": "success",
+            "response": result["response"],
+            "tts_audio_data": result.get("tts_audio_data"),
+            "context_used": result.get("context_used", {}),
+            "timestamp": result.get("timestamp"),
+            "user_id": user_id,
+            "session_id": session_id
+        }
+        
+        # Debug logging
+        print(f"🔍 Chat Debug: Response length: {len(result['response'])}")
+        print(f"🔍 Chat Debug: TTS audio data exists: {result.get('tts_audio_data') is not None}")
+        if result.get("tts_audio_data"):
+            print(f"🔍 Chat Debug: TTS audio data length: {len(result['tts_audio_data'])}")
+        
+        return response_data
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Chat processing failed: {str(e)}",
+            "response": "I apologize, but I'm having trouble processing your message right now. Please try again."
+        }
 
 @app.post("/api/voice/speak")
-async def text_to_speech(user_id: str, session_id: str, text: str):
-    """ElevenLabs TTS endpoint"""
-    return {
-        "status": "success",
-        "audio_url": "https://example.com/audio.mp3",
-        "message": "Text-to-speech conversion"
-    }
+async def text_to_speech(
+    text: str = Form(...),
+    user_id: str = Form(default="demo_user"),
+    session_id: str = Form(default="demo_session"),
+    voice_id: str = Form(default="pNInz6obpgDQGcFmaJgB"),  # Default Adam voice
+    model: str = Form(default="eleven_flash_v2_5")
+):
+    """ElevenLabs TTS endpoint - Convert text to speech and return audio"""
+    try:
+        from utils.elevenlabs_client import elevenlabs_client
+        
+        if not elevenlabs_client.client:
+            return {
+                "status": "error",
+                "message": "ElevenLabs API key not configured",
+                "audio_data": None
+            }
+        
+        # Generate TTS audio
+        audio_bytes = await elevenlabs_client.text_to_speech(
+            text=text,
+            voice_id=voice_id,
+            model=model
+        )
+        
+        # Return audio as base64 encoded string for frontend consumption
+        import base64
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        return {
+            "status": "success",
+            "audio_data": audio_base64,
+            "text": text,
+            "voice_id": voice_id,
+            "model": model,
+            "user_id": user_id,
+            "session_id": session_id,
+            "audio_size": len(audio_bytes)
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"TTS generation failed: {str(e)}",
+            "audio_data": None
+        }
 
 if __name__ == "__main__":
     print("🚀 Starting Hermes API server...")
