@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from utils.firebase_client import initialize_firebase  # Initialize Firebase first
+from routes import journal_routes
+from services.firebase_client import initialize_firebase  # Initialize Firebase first
 from routes import user_routes
 import uvicorn
 # from agents.geo_agent import router as geo_router
@@ -20,6 +21,7 @@ app.add_middleware(
 
 # Register routers
 app.include_router(user_routes.router)
+app.include_router(journal_routes.router)
 # app.include_router(geo_router)
 # app.include_router(wiki_router)
 

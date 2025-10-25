@@ -1,6 +1,6 @@
 # routes/user_routes.py
 from fastapi import APIRouter, Depends, HTTPException
-from utils.firebase_client import initialize_firebase  # Ensure Firebase is initialized
+from services.firebase_client import initialize_firebase  # Ensure Firebase is initialized
 from utils.auth_util import verify_firebase_token
 from firebase_admin import auth
 from pydantic import BaseModel, EmailStr
