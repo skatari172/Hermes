@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { CameraButton, MicButton, TextInput } from '../components/homecomponents';
 
 export default function HomeScreen() {
   const [messages, setMessages] = useState<Array<{id: string, text: string, timestamp: Date, isUser: boolean, imageUri?: string}>>([]);
@@ -45,37 +45,25 @@ export default function HomeScreen() {
     }
   };
 
-  const handleCameraLaunch = async () => {
-    // Request camera permissions
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    
-    if (status !== 'granted') {
-      Alert.alert('Permission denied', 'Sorry, we need camera permissions to take photos!');
-      return;
-    }
+  const handleImageCaptured = (imageUri: string) => {
+    const newMessage = {
+      id: Date.now().toString(),
+      text: '',
+      timestamp: new Date(),
+      isUser: true,
+      imageUri: imageUri
+    };
+    setMessages(prev => [...prev, newMessage]);
+  };
 
-    // Launch camera
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const source = result.assets[0].uri;
-      console.log('Image URI: ', source);
-      
-      // Add photo message to chat with image
-      const newMessage = {
-        id: Date.now().toString(),
-        text: '',
-        timestamp: new Date(),
-        isUser: true,
-        imageUri: source
-      };
-      setMessages(prev => [...prev, newMessage]);
-    }
+  const handleAudioRecorded = (audioUri: string) => {
+    const newMessage = {
+      id: Date.now().toString(),
+      text: '🎤 Audio messag recorded',
+      timestamp: new Date(),
+      isUser: true
+    };
+    setMessages(prev => [...prev, newMessage]);
   };
 
 
@@ -157,22 +145,15 @@ export default function HomeScreen() {
 
       {/* Input Area */}
       <View style={styles.inputContainer}>
-        <TouchableOpacity style={styles.cameraButton} onPress={handleCameraLaunch}>
-          <Ionicons name="camera" size={24} color="#043263" />
-        </TouchableOpacity>
-        <View style={styles.textInputContainer}>
-          <TextInput
-            style={styles.textInput}
-            placeholder="Type a message.."
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={500}
-          />
-          <TouchableOpacity style={styles.submitButton} onPress={handleSubmitMessage}>
-            <Ionicons name="send" size={20} color="#043263" />
-          </TouchableOpacity>
-        </View>
+        <CameraButton onImageCaptured={handleImageCaptured} />
+        <TextInput
+          value={inputText}
+          onChangeText={setInputText}
+          onSubmit={handleSubmitMessage}
+          placeholder="Type a message.."
+          maxLength={500}
+        />
+        <MicButton onAudioRecorded={handleAudioRecorded} />
       </View>
       </KeyboardAvoidingView>
     </View>
@@ -300,42 +281,5 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5ECFF',
     minHeight: 60,
-  },
-  cameraButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E5ECFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  submitButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  textInputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5ECFF',
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 40,
-    maxHeight: 100,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 16,
-    padding: 0,
-    margin: 0,
-    textAlignVertical: 'center',
-  },
-  micButton: {
-    padding: 4,
-    marginLeft: 8,
   },
 });
