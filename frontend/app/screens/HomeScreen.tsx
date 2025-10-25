@@ -51,7 +51,7 @@ export default function HomeScreen() {
       try {
         // Auto-detect backend URL
         const possibleURLs = [
-          'http://10.127.217.215:8000',
+          process.env.EXPO_PUBLIC_API_URL,
           'http://localhost:8000',
           'http://127.0.0.1:8000',
           'http://10.0.2.2:8000',
@@ -255,7 +255,7 @@ export default function HomeScreen() {
       try {
         // Auto-detect backend URL (same logic as MicButton)
         const possibleURLs = [
-          'http://10.127.217.215:8000',
+          process.env.EXPO_PUBLIC_API_URL,
           'http://localhost:8000',
           'http://127.0.0.1:8000',
           'http://10.0.2.2:8000',
