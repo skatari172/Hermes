@@ -7,7 +7,7 @@ import os
 import io
 import asyncio
 from typing import Optional, AsyncGenerator
-from elevenlabs import Voice, VoiceSettings, generate, stream
+from elevenlabs import Voice, VoiceSettings
 from elevenlabs.client import ElevenLabs
 import httpx
 from config.settings import get_settings
@@ -18,22 +18,13 @@ class ElevenLabsClient:
     """Client for ElevenLabs Text-to-Speech API."""
     
     def __init__(self):
-        self.api_key = settings.ELEVENLABS_API_KEY
+        self.api_key = settings.elevenlabs_api_key
         if not self.api_key:
-            raise ValueError("ELEVENLABS_API_KEY not found in environment variables")
-        
-        self.client = ElevenLabs(api_key=self.api_key)
-        
-        # Default voice settings for Hermes
-        self.default_voice = Voice(
-            voice_id="pNInz6obpgDQGcFmaJgB",  # Adam voice (default)
-            settings=VoiceSettings(
-                stability=0.5,
-                similarity_boost=0.8,
-                style=0.0,
-                use_speaker_boost=True
-            )
-        )
+            # Don't raise error, just log warning
+            print("⚠️ ELEVENLABS_API_KEY not found - TTS will not work")
+            self.client = None
+        else:
+            self.client = ElevenLabs(api_key=self.api_key)
     
     async def text_to_speech(
         self, 
@@ -53,16 +44,14 @@ class ElevenLabsClient:
             Audio bytes in MP3 format
         """
         try:
-            voice = self.default_voice
-            if voice_id:
-                voice = Voice(voice_id=voice_id)
+            if not self.client:
+                raise Exception("ElevenLabs client not initialized - check API key")
             
-            # Generate audio
-            audio = generate(
+            # Use the client's generate method
+            audio = self.client.generate(
                 text=text,
-                voice=voice,
-                model=model,
-                api_key=self.api_key
+                voice=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
+                model=model
             )
             
             return audio
@@ -88,16 +77,15 @@ class ElevenLabsClient:
             Audio chunks as bytes
         """
         try:
-            voice = self.default_voice
-            if voice_id:
-                voice = Voice(voice_id=voice_id)
+            if not self.client:
+                raise Exception("ElevenLabs client not initialized - check API key")
             
-            # Stream audio generation
-            audio_stream = stream(
+            # Use the client's generate method with streaming
+            audio_stream = self.client.generate(
                 text=text,
-                voice=voice,
+                voice=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
                 model=model,
-                api_key=self.api_key
+                stream=True
             )
             
             for chunk in audio_stream:
@@ -109,6 +97,9 @@ class ElevenLabsClient:
     async def get_available_voices(self) -> list:
         """Get list of available voices from ElevenLabs."""
         try:
+            if not self.client:
+                return []
+            
             voices = self.client.voices.get_all()
             return [
                 {
@@ -137,6 +128,98 @@ class ElevenLabsClient:
             "sam": "yoZ06aMxZJJ28mfd3POQ"
         }
         return voice_mapping.get(name.lower())
+    
+    async def speech_to_text(self, audio_content: bytes) -> dict:
+        """
+        Convert speech to text using ElevenLabs STT API.
+        
+        Args:
+            audio_content: Audio file content as bytes
+            
+        Returns:
+            Transcription result with text and metadata
+        """
+        try:
+            if not self.client:
+                raise Exception("ElevenLabs client not initialized - check API key")
+            
+            import io
+            import tempfile
+            import os
+            
+            print(f"🔍 Audio content size: {len(audio_content)} bytes")
+            print(f"🔍 First 20 bytes: {audio_content[:20]}")
+            print(f"🔍 Last 20 bytes: {audio_content[-20:]}")
+            
+            # Check if file is empty
+            if len(audio_content) == 0:
+                raise Exception("Audio file is empty!")
+            
+            # Check if file is too small (likely corrupted)
+            if len(audio_content) < 1000:
+                raise Exception(f"Audio file too small ({len(audio_content)} bytes) - likely corrupted")
+            
+            # Check for valid audio headers
+            # WAV files should start with "RIFF" and contain "WAVE"
+            if audio_content[:4] != b'RIFF':
+                print(f"⚠️ Warning: File doesn't start with RIFF header. First 4 bytes: {audio_content[:4]}")
+                # Try to detect format
+                if audio_content[:3] == b'ID3':
+                    print("🔍 Detected MP3 format")
+                elif b'ftyp' in audio_content[:20]:
+                    print("🔍 Detected MP4/M4A format")
+                elif audio_content[:2] == b'\xff\xfb' or audio_content[:2] == b'\xff\xfa':
+                    print("🔍 Detected MP3 format (MPEG header)")
+                else:
+                    print(f"🔍 Unknown format. First 10 bytes: {audio_content[:10]}")
+            else:
+                print("🔍 Detected WAV format")
+            
+            # Create a temporary file for the audio content
+            # Use .wav format as it's most compatible with ElevenLabs STT
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+                temp_file.write(audio_content)
+                temp_file_path = temp_file.name
+            
+            print(f"🔍 Created temp file: {temp_file_path}")
+            print(f"🔍 Temp file size: {os.path.getsize(temp_file_path)} bytes")
+            
+            # Try to validate the file is readable
+            try:
+                with open(temp_file_path, 'rb') as test_file:
+                    test_content = test_file.read(100)
+                    print(f"🔍 Temp file first 20 bytes: {test_content[:20]}")
+            except Exception as e:
+                print(f"❌ Error reading temp file: {e}")
+                raise Exception(f"Temp file is not readable: {e}")
+            
+            try:
+                # Try using the file upload method instead
+                # First upload the file, then convert
+                with open(temp_file_path, 'rb') as audio_file:
+                    result = self.client.speech_to_text.convert(
+                        file=audio_file,
+                        model_id="scribe_v1"
+                    )
+                
+                print(f"✅ STT Success: {result.text}")
+                
+                return {
+                    "text": result.text,
+                    "language_code": getattr(result, 'language_code', 'en'),
+                    "language_probability": getattr(result, 'language_probability', 1.0),
+                    "words": getattr(result, 'words', []),
+                    "confidence": 0.9  # ElevenLabs doesn't provide confidence, so we estimate
+                }
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    print(f"🗑️ Cleaned up temp file: {temp_file_path}")
+            
+        except Exception as e:
+            print(f"❌ STT Error: {str(e)}")
+            raise Exception(f"STT conversion failed: {str(e)}")
 
 # Global instance
 elevenlabs_client = ElevenLabsClient()
