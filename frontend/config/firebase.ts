@@ -14,10 +14,10 @@ const firebaseConfig = {
   measurementId: "G-RE060Z5H5X"
 };
 
-// Initialize Firebase safely (avoid duplicate-app errors)
+// Initialize Firebase (safe guard against double initialization)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize services
+// Initialize Firebase services
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const db = getFirestore(app);
