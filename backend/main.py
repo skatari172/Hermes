@@ -1,25 +1,46 @@
-# TODO: FastAPI entrypoint + ADK bus setup
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from utils.firebase_client import initialize_firebase  # Initialize Firebase first
+from routes import user_routes
+import uvicorn
 import os
-from pydantic import BaseSettings
 
-class Settings(BaseSettings):
-    # Firebase Configuration
-    firebase_project_id: str = os.getenv("FIREBASE_PROJECT_ID", "hermes-521f9")
-    firebase_private_key: str = os.getenv("FIREBASE_PRIVATE_KEY", "REPLACE_WITH_YOUR_FIREBASE_PRIVATE_KEY")
-    firebase_client_email: str = os.getenv("FIREBASE_CLIENT_EMAIL", "REPLACE_WITH_YOUR_FIREBASE_CLIENT_EMAIL")
-    firebase_private_key_id: str = os.getenv("FIREBASE_PRIVATE_KEY_ID", "REPLACE_WITH_YOUR_FIREBASE_PRIVATE_KEY_ID")
-    firebase_client_id: str = os.getenv("FIREBASE_CLIENT_ID", "REPLACE_WITH_YOUR_FIREBASE_CLIENT_ID")
-    firebase_auth_uri: str = os.getenv("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth")
-    firebase_token_uri: str = os.getenv("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token")
-    
-    # API Configuration
-    api_host: str = os.getenv("API_HOST", "0.0.0.0")
-    api_port: int = int(os.getenv("API_PORT", "8000"))
-    
-    # CORS Configuration
-    allowed_origins: list = ["http://localhost:3000", "http://localhost:8081", "exp://192.168.1.100:8081"]
-    
-    class Config:
-        env_file = ".env"
+app = FastAPI(title="Hermes API", description="Personal AI Assistant API")
 
-settings = Settings()
+# Add CORS middleware - Allow all origins for development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register routers
+app.include_router(user_routes.router)
+
+@app.get("/")
+def root():
+    return {"message": "Hermes API running 🚀", "status": "healthy"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "message": "API is running"}
+
+if __name__ == "__main__":
+    print("🚀 Starting Hermes API server...")
+    print("📍 API will be available at:")
+    print("   - Local: http://localhost:8000")
+    print("   - Network: http://0.0.0.0:8000")
+    print("   - External: http://208.64.158.251:8000")
+    print("📚 API docs will be available at: http://208.64.158.251:8000/docs")
+    print("🧪 Test endpoint: http://208.64.158.251:8000/user/test")
+    print("=" * 50)
+    
+    uvicorn.run(
+        "main:app",  # Use import string instead of app object
+        host="0.0.0.0",  # Listen on all interfaces
+        port=8000,
+        log_level="info",
+        reload=True  # Enable auto-reload for development
+    )

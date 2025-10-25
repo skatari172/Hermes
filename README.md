@@ -178,7 +178,7 @@ hermes/
 │   │   ├── bus.py                      # Lightweight pub/sub message bus
 │   │   ├── gemini_client.py            # Gemini Vision/Text wrappers
 │   │   ├── maps_client.py              # Google Maps API helper
-│   │   ├── firestore_client.py         # Firestore database client
+│   │   ├── firebase_client.py          # Firebase Admin SDK client
 │   │   ├── translate_client.py         # Optional translator fallback
 │   │   └── helpers.py                  # Common helper functions
 │   ├── memory/
