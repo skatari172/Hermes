@@ -1,5 +1,5 @@
 import firebase_admin
-from firebase_admin import credentials
+from firebase_admin import credentials, firestore
 
 def initialize_firebase():
     """Initialize Firebase Admin SDK"""
@@ -10,5 +10,8 @@ def initialize_firebase():
     else:
         print("Firebase already initialized").gitignore
 
+    
 # Initialize Firebase
 initialize_firebase()
+
+db = firestore.client()
