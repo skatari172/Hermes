@@ -6,6 +6,98 @@ uvicorn[standard]==0.30.1
 google-cloud-firestore==2.15.0
 google-cloud-storage==2.18.2
 google-generativeai==0.5.4       # Gemini 1.5 Vision/Text API wrapper
+firebase-admin==6.5.0
+# --- HTTP + async utilities ---
+httpx==0.27.0
+aiofiles==23.2.1
+requests==2.32.3
+
+# --- Environment + config ---
+python-dotenv==1.0.1
+pydantic==2.7.0
+pydantic-settings==2.0.0
+python-multipart==0.0.19
+
+# --- Logging + tracing (optional but useful) ---
+loguru==0.7.2
+
+# --- Scheduling / future daily report ---
+twilio==9.0.0
+apscheduler==3.10.4
+
+# --- Core server framework ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.1
+
+# --- Google AI + Firestore integration ---
+google-cloud-firestore==2.15.0
+google-cloud-storage==2.18.2
+google-generativeai==0.5.4       # Gemini 1.5 Vision/Text API wrapper
+firebase-admin==6.5.0
+
+# --- Authentication & Security ---
+bcrypt==4.1.2
+email-validator==2.1.0
+
+# --- HTTP + async utilities ---
+httpx==0.27.0
+aiofiles==23.2.1
+requests==2.32.3
+
+# --- Environment + config ---
+python-dotenv==1.0.1
+pydantic==2.7.0
+
+# --- Logging + tracing (optional but useful) ---
+loguru==0.7.2
+
+# --- Scheduling / future daily report ---
+twilio==9.0.0
+apscheduler==3.10.4
+
+# --- Core server framework ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.1
+
+# --- Google AI + Firestore integration ---
+google-cloud-firestore==2.15.0
+google-cloud-storage==2.18.2
+google-generativeai==0.5.4       # Gemini 1.5 Vision/Text API wrapper
+firebase-admin==6.5.0
+
+# --- Authentication & Security ---
+bcrypt==4.1.2
+email-validator==2.1.0
+
+# --- HTTP + async utilities ---
+httpx==0.27.0
+aiofiles==23.2.1
+requests==2.32.3
+
+# --- Environment + config ---
+python-dotenv==1.0.1
+pydantic==2.7.0
+
+# --- Logging + tracing (optional but useful) ---
+loguru==0.7.2
+
+# --- Scheduling / future daily report ---
+twilio==9.0.0
+apscheduler==3.10.4
+
+# --- Core server framework ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.1
+
+# --- Google AI + Firestore integration ---
+google-cloud-firestore==2.15.0
+google-cloud-storage==2.18.2
+google-generativeai==0.5.4       # Gemini 1.5 Vision/Text API wrapper
+firebase-admin==6.5.0
+
+# --- Authentication & Security ---
+bcrypt==4.1.2
+email-validator==2.1.0
 
 # --- HTTP + async utilities ---
 httpx==0.27.0
@@ -25,10 +117,20 @@ apscheduler==3.10.4
 
 # --- Optional NLP / summarization helpers ---
 nltk==3.9
-langchain-google-adk==0.1.8       # ADK-style runner + A2A message bus
 
 # --- Testing / development ---
 pytest==8.3.2
 pytest-asyncio==0.23.8
 black==24.8.0
 isort==5.13.2
+
+# --- Voice interaction ---
+elevenlabs==1.4.0                 # ElevenLabs TTS API
+
+# --- Testing / development ---
+pytest==8.3.2
+pytest-asyncio==0.23.8
+black==24.8.0
+isort==5.13.2
+
+google-adk
