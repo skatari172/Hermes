@@ -42,10 +42,6 @@ interface ConversationLocation {
   photo_url?: string;
   timestamp: string;
   date: string;
-  total_conversations?: number;
-  all_messages?: string[];
-  all_responses?: string[];
-  conversations?: ConversationEntry[];
 }
 
 export default function JournalScreen() {
@@ -152,22 +148,14 @@ export default function JournalScreen() {
 
   const loadConversationData = async () => {
     try {
-      console.log('🔍 Loading conversation data...');
-      
-      // Debug: Check user info first
-      const debugResponse = await apiClient.get('/journal/debug/user');
-      console.log('🔍 Debug user info:', debugResponse.data);
-      
       // Load conversation locations for map
       const locationsResponse = await apiClient.get('/journal/locations');
-      console.log('🗺️ Locations response:', locationsResponse.data);
       if (locationsResponse.data && locationsResponse.data.locations) {
         setConversationLocations(locationsResponse.data.locations);
       }
 
       // Load daily conversations for list view
       const conversationsResponse = await apiClient.get('/journal/conversations');
-      console.log('💬 Conversations response:', conversationsResponse.data);
       if (conversationsResponse.data && conversationsResponse.data.conversations) {
         const conversationsData = conversationsResponse.data.conversations;
         
@@ -192,11 +180,10 @@ export default function JournalScreen() {
           })
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort by date descending
 
-        console.log('📅 Daily conversations data:', dailyConversationsData);
         setDailyConversations(dailyConversationsData);
       }
     } catch (error) {
-      console.error('❌ Error loading conversation data:', error);
+      console.error('Error loading conversation data:', error);
     }
   };
 
@@ -394,13 +381,6 @@ export default function JournalScreen() {
                   <View style={journalStyles.markerWrapper}>
                     <View style={[journalStyles.markerBubble, { backgroundColor: '#007AFF' }]}> 
                       <MaterialCommunityIcons name="message-text" size={18} color="white" />
-                      {conversationLocation.total_conversations && conversationLocation.total_conversations > 1 && (
-                        <View style={styles.conversationCountBadge}>
-                          <Text style={styles.conversationCountText}>
-                            {conversationLocation.total_conversations}
-                          </Text>
-                        </View>
-                      )}
                     </View>
                     <View style={[journalStyles.markerPointer, { borderTopColor: '#007AFF' }]} />
                   </View>
@@ -507,43 +487,15 @@ export default function JournalScreen() {
 
                   {/* Conversation Content */}
                   <View style={journalStyles.pinDetailContent}>
-                    {selectedConversation.conversations && selectedConversation.conversations.length > 1 ? (
-                      // Multiple conversations for the day
-                      <>
-                        <Text style={journalStyles.pinDetailLabel}>
-                          Daily Conversations ({selectedConversation.total_conversations} messages)
-                        </Text>
-                        <ScrollView style={{ maxHeight: 400 }}>
-                          {selectedConversation.conversations.map((conversation, index) => (
-                            <View key={index} style={styles.individualConversationCard}>
-                              <View style={styles.conversationHeader}>
-                                <Text style={styles.conversationIndex}>Message {index + 1}</Text>
-                                <Text style={styles.conversationTime}>
-                                  {new Date(conversation.timestamp).toLocaleTimeString()}
-                                </Text>
-                              </View>
-                              <Text style={journalStyles.pinDetailLabel}>Your Message</Text>
-                              <Text style={styles.conversationMessage}>{conversation.message}</Text>
-                              <Text style={journalStyles.pinDetailLabel}>Hermes Response</Text>
-                              <Text style={styles.conversationResponse}>{conversation.response}</Text>
-                            </View>
-                          ))}
-                        </ScrollView>
-                      </>
-                    ) : (
-                      // Single conversation
-                      <>
-                        <Text style={journalStyles.pinDetailLabel}>Your Message</Text>
-                        <Text style={journalStyles.pinDetailDescription}>
-                          {selectedConversation.message}
-                        </Text>
+                    <Text style={journalStyles.pinDetailLabel}>Your Message</Text>
+                    <Text style={journalStyles.pinDetailDescription}>
+                      {selectedConversation.message}
+                    </Text>
 
-                        <Text style={journalStyles.pinDetailLabel}>Hermes Response</Text>
-                        <Text style={journalStyles.pinDetailDescription}>
-                          {selectedConversation.response}
-                        </Text>
-                      </>
-                    )}
+                    <Text style={journalStyles.pinDetailLabel}>Hermes Response</Text>
+                    <Text style={journalStyles.pinDetailDescription}>
+                      {selectedConversation.response}
+                    </Text>
                   </View>
                 </ScrollView>
 
@@ -682,60 +634,5 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 4,
     textAlign: 'center',
-  },
-  conversationCountBadge: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#FF3B30',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
-  },
-  conversationCountText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  individualConversationCard: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  conversationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  conversationIndex: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-  conversationTime: {
-    fontSize: 12,
-    color: '#666',
-  },
-  conversationMessage: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  conversationResponse: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
   },
 });
