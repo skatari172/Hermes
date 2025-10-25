@@ -110,3 +110,21 @@ export const userAPI = {
 };
 
 export default apiClient;
+ 
+// Journal API functions
+export const journalAPI = {
+  generateFromLatest: (token: string) => {
+    return apiClient.post('/journal/generate-latest', {}, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  },
+  getHistory: (token: string) => {
+    return apiClient.get('/journal/history', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  },
+};
