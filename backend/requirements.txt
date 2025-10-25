@@ -15,6 +15,8 @@ requests==2.32.3
 # --- Environment + config ---
 python-dotenv==1.0.1
 pydantic==2.7.0
+pydantic-settings==2.0.0
+python-multipart==0.0.19
 
 # --- Logging + tracing (optional but useful) ---
 loguru==0.7.2
