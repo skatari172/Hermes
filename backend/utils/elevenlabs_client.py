@@ -30,7 +30,7 @@ class ElevenLabsClient:
         self, 
         text: str, 
         voice_id: Optional[str] = None,
-        model: str = "eleven_monolingual_v1"
+        model: str = "eleven_flash_v2_5"  # Updated to use Flash v2.5 for low latency
     ) -> bytes:
         """
         Convert text to speech and return audio bytes.
@@ -47,14 +47,20 @@ class ElevenLabsClient:
             if not self.client:
                 raise Exception("ElevenLabs client not initialized - check API key")
             
-            # Use the client's generate method
-            audio = self.client.generate(
+            # Use the client's text_to_speech.convert method (correct API)
+            audio_generator = self.client.text_to_speech.convert(
+                voice_id=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
                 text=text,
-                voice=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
-                model=model
+                model_id=model,
+                output_format="mp3_44100_128"  # Standard MP3 format
             )
             
-            return audio
+            # Collect all audio chunks into bytes
+            audio_bytes = b""
+            for chunk in audio_generator:
+                audio_bytes += chunk
+            
+            return audio_bytes
             
         except Exception as e:
             raise Exception(f"TTS generation failed: {str(e)}")
@@ -63,7 +69,7 @@ class ElevenLabsClient:
         self, 
         text: str, 
         voice_id: Optional[str] = None,
-        model: str = "eleven_monolingual_v1"
+        model: str = "eleven_flash_v2_5"  # Updated to use Flash v2.5 for low latency
     ) -> AsyncGenerator[bytes, None]:
         """
         Stream text-to-speech conversion for real-time audio.
@@ -80,11 +86,12 @@ class ElevenLabsClient:
             if not self.client:
                 raise Exception("ElevenLabs client not initialized - check API key")
             
-            # Use the client's generate method with streaming
-            audio_stream = self.client.generate(
+            # Use the client's text_to_speech.convert method with streaming
+            audio_stream = self.client.text_to_speech.convert(
+                voice_id=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
                 text=text,
-                voice=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
-                model=model,
+                model_id=model,
+                output_format="mp3_44100_128",  # Standard MP3 format
                 stream=True
             )
             

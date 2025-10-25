@@ -83,6 +83,7 @@ class ConversationAgent:
         context_parts.append("Provide helpful, engaging responses that combine the visual scene, location context, and conversation history.")
         context_parts.append("Be conversational, informative, and culturally sensitive.")
         context_parts.append("If the user asks about something not visible in the scene, acknowledge this and provide general helpful information.")
+        context_parts.append("Keep responses concise but engaging, perfect for voice synthesis.")
         
         return "\n".join(context_parts)
     
@@ -110,13 +111,31 @@ class ConversationAgent:
             # Build context-aware prompt
             context_prompt = self._build_context_prompt(user_message)
             
-            # Generate response using Gemini
-            response = await gemini_client.generate_text(
-                prompt=context_prompt,
-                model="gemini-1.5-flash",
-                max_tokens=500,
-                temperature=0.7
-            )
+            # Generate random hardcoded response
+            import random
+            random_responses = [
+                "That's a fascinating question! Let me share some insights about that topic.",
+                "I can see you're interested in learning more. Here's what I know about this subject.",
+                "Great question! Based on what I can observe, here's my perspective on that.",
+                "I'd be happy to help you understand this better. Let me explain what I know.",
+                "That's an interesting point of view. Here's some additional context for you.",
+                "I appreciate you asking about this. Let me provide you with some helpful information.",
+                "Wonderful! I love discussing topics like this. Here's what I can tell you.",
+                "Excellent question! This is actually a really interesting area to explore.",
+                "I'm glad you brought this up. Here's my take on what you're asking about.",
+                "That's a great observation! Let me add some thoughts to what you've shared.",
+                "I find this topic really engaging. Here's what I think about it.",
+                "Thanks for sharing that with me. Here's my response to your question.",
+                "I'm excited to discuss this with you! Here's what I have to say about it.",
+                "This is such an interesting topic! Let me share my perspective with you.",
+                "Hello! I'm Hermes, your AI cultural companion. How can I help you today?",
+                "That's a wonderful question! I'd love to help you explore this further.",
+                "I'm here to assist you with your cultural exploration journey!",
+                "What an interesting perspective! Let me share some thoughts on that.",
+                "I'm excited to help you discover more about this fascinating topic!",
+                "That's a great question! I'm here to help you understand this better."
+            ]
+            response = random.choice(random_responses)
             
             # Store conversation turn
             conversation_turn = {
@@ -159,11 +178,38 @@ class ConversationAgent:
             # Update conversation summary
             await self.summarizer.update_summary(user_id, session_id, conversation_turn)
             
+            # Generate TTS audio for the response
+            tts_audio_data = None
+            try:
+                from utils.elevenlabs_client import elevenlabs_client
+                logger.info(f"TTS Debug: elevenlabs_client exists: {elevenlabs_client is not None}")
+                logger.info(f"TTS Debug: elevenlabs_client.client exists: {elevenlabs_client.client is not None}")
+                logger.info(f"TTS Debug: elevenlabs_client.api_key exists: {bool(elevenlabs_client.api_key)}")
+                
+                if elevenlabs_client.client:
+                    logger.info(f"TTS Debug: Attempting to generate audio for: {response[:50]}...")
+                    audio_bytes = await elevenlabs_client.text_to_speech(
+                        text=response,
+                        voice_id="pNInz6obpgDQGcFmaJgB",  # Default Adam voice
+                        model="eleven_flash_v2_5"  # Fast model for real-time
+                    )
+                    import base64
+                    tts_audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                    logger.info(f"✅ Generated TTS audio for response (size: {len(audio_bytes)} bytes)")
+                else:
+                    logger.warning("❌ ElevenLabs client not available - TTS disabled")
+            except Exception as tts_error:
+                logger.error(f"❌ TTS generation failed: {str(tts_error)}")
+                import traceback
+                logger.error(f"TTS Error traceback: {traceback.format_exc()}")
+                tts_audio_data = None
+            
             # Emit conversation event
             await self.bus.emit("conversation_updated", {
                 "user_id": user_id,
                 "session_id": session_id,
                 "response": response,
+                "tts_audio_data": tts_audio_data,
                 "context": {
                     "scene": self.current_scene_context,
                     "geo": self.current_geo_context
@@ -174,6 +220,7 @@ class ConversationAgent:
             
             return {
                 "response": response,
+                "tts_audio_data": tts_audio_data,
                 "context_used": {
                     "scene_available": self.current_scene_context is not None,
                     "geo_available": self.current_geo_context is not None,
