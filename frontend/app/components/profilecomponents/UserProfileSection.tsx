@@ -161,6 +161,7 @@ export default function UserProfileSection() {
             <Ionicons name="pencil" size={16} color="#FFFFFF" />
           )}
         </TouchableOpacity>
+        
       </View>
       <Text style={styles.userName}>{displayName}</Text>
       <Text style={styles.userEmail}>{email}</Text>
