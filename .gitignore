@@ -1,8 +1,11 @@
 .env
-env/
+venv/
 node_modules/
 package-lock.json
 venv/
 __pycache__/
 *.pyc
 .DS_Store
+
+/env/
+/node_modules/

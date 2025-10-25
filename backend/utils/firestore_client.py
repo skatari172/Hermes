@@ -1,1 +1,0 @@
-# TODO: Firestore database client
