@@ -1,9 +1,6 @@
 from fastapi import HTTPException, Header
+from utils.firebase_client import initialize_firebase  # Ensure Firebase is initialized
 from firebase_admin import auth
-from utils.firestore_client import initialize_firebase
-
-# Ensure Firebase is initialized
-initialize_firebase()
 
 def verify_firebase_token(authorization: str = Header(...)):
     """
