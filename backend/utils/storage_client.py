@@ -157,6 +157,7 @@ class StorageClient:
                 logger.info(f"✅ Image processed, new size: {len(image_data)} bytes")
             
             # Determine file extension
+            # Determine file extension
             extension_map = {
                 "image/jpeg": "jpg",
                 "image/jpg": "jpg", 
@@ -164,42 +165,45 @@ class StorageClient:
                 "image/webp": "webp"
             }
             file_extension = extension_map.get(content_type, "jpg")
-            
+
+            # Use a deterministic uploads path for chat images: uploads/{user_id}/{timestamp}_{uuid}.{ext}
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S%f")
+            unique_id = str(uuid.uuid4())[:8]
+            filename = f"{timestamp}_{unique_id}.{file_extension}"
+            storage_path = f"uploads/{user_id}/{filename}"
+
             # Try Firebase Storage first
             if self.bucket and not self.use_local_storage:
                 try:
-                    # Generate storage path
-                    storage_path = self._generate_image_path(user_id, file_extension)
                     logger.info(f"📁 Firebase storage path: {storage_path}")
                     
-                    # Upload to Firebase Storage
+                    # Upload to Firebase Storage at the deterministic path
                     blob = self.bucket.blob(storage_path)
                     logger.info(f"🔄 Uploading to Firebase Storage...")
-                    
                     blob.upload_from_string(
                         image_data,
                         content_type=content_type
                     )
-                    
                     logger.info(f"✅ File uploaded successfully to {storage_path}")
-                    
-                    # Make the blob publicly accessible
-                    logger.info("🔄 Making blob publicly accessible...")
-                    blob.make_public()
-                    
-                    # Get public URL
-                    public_url = blob.public_url
-                    
-                    logger.info(f"✅ Firebase upload successful: {storage_path}")
-                    logger.info(f"🔗 Public URL: {public_url}")
-                    
-                    return public_url
-                    
+
+                    # Make the blob publicly accessible if possible
+                    try:
+                        blob.make_public()
+                    except Exception:
+                        logger.warning("Could not make blob public; it may require signed URLs or bucket rules")
+
+                    public_url = getattr(blob, 'public_url', None)
+                    if public_url:
+                        logger.info(f"✅ Firebase upload successful: {public_url}")
+                        return public_url
+                    else:
+                        logger.info("🔗 Firebase upload returned no public_url; returning storage path")
+                        return storage_path
+
                 except Exception as firebase_error:
                     logger.error(f"❌ Firebase Storage upload failed: {str(firebase_error)}")
                     logger.warning("🔄 Falling back to local storage")
-                    
-                    # Check specific error types for debugging
+                    # Additional debugging hints
                     if "403" in str(firebase_error) or "Forbidden" in str(firebase_error):
                         logger.error("❌ Firebase Storage permission denied - check service account permissions")
                     elif "404" in str(firebase_error) or "not found" in str(firebase_error).lower():
@@ -305,6 +309,84 @@ class StorageClient:
             
         except Exception as e:
             logger.error(f"❌ Failed to get image metadata: {str(e)}")
+            return None
+
+    async def upload_profile_image(
+        self,
+        image_data: bytes,
+        user_id: str,
+        content_type: str = "image/jpeg",
+        process_image: bool = True
+    ) -> Optional[str]:
+        """
+        Upload a user's profile image to a deterministic location.
+
+        This stores the file at `profile/{user_id}.{ext}` in the Firebase bucket
+        when available, or at `uploads/profile/{user_id}.{ext}` on local disk.
+
+        Returns the public URL or None on failure.
+        """
+        try:
+            logger.info(f"📸 Starting profile image upload for user {user_id} size={len(image_data)}")
+
+            # Optionally process image
+            if process_image and content_type.startswith("image/"):
+                logger.info("🔄 Processing profile image before upload")
+                image_data = self._process_image(image_data)
+
+            extension_map = {
+                "image/jpeg": "jpg",
+                "image/jpg": "jpg",
+                "image/png": "png",
+                "image/webp": "webp"
+            }
+            file_extension = extension_map.get(content_type, "jpg")
+
+            # Try Firebase Storage first
+            if self.bucket and not self.use_local_storage:
+                try:
+                    storage_path = f"profile/{user_id}.{file_extension}"
+                    logger.info(f"📁 Firebase profile storage path: {storage_path}")
+                    blob = self.bucket.blob(storage_path)
+                    blob.upload_from_string(image_data, content_type=content_type)
+                    # Make public if possible
+                    try:
+                        blob.make_public()
+                    except Exception:
+                        logger.warning("Could not make profile blob public; relying on signed URLs or bucket rules")
+
+                    public_url = getattr(blob, 'public_url', None)
+                    if public_url:
+                        logger.info(f"✅ Firebase profile upload successful: {public_url}")
+                        return public_url
+                    else:
+                        # Construct a gs:// style or fallback URL
+                        logger.info("🔗 Firebase upload returned no public_url; constructing path")
+                        return f"{storage_path}"
+
+                except Exception as firebase_error:
+                    logger.error(f"❌ Firebase profile upload failed: {str(firebase_error)}")
+                    logger.warning("🔄 Falling back to local profile storage")
+
+            # Local storage fallback (deterministic filename)
+            logger.info("💾 Using local storage for profile image")
+            try:
+                profile_dir = os.path.join(self.local_storage_dir, "profile")
+                os.makedirs(profile_dir, exist_ok=True)
+                filename = f"{user_id}.{file_extension}"
+                file_path = os.path.join(profile_dir, filename)
+                with open(file_path, 'wb') as f:
+                    f.write(image_data)
+
+                local_url = f"http://localhost:8000/uploads/profile/{filename}"
+                logger.info(f"✅ Local profile image saved: {file_path} -> {local_url}")
+                return local_url
+            except Exception as e:
+                logger.error(f"❌ Saving profile image locally failed: {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ upload_profile_image failed: {str(e)}")
             return None
 
 # Global storage client instance

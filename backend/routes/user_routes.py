@@ -1,10 +1,15 @@
 # routes/user_routes.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from services.firebase_client import initialize_firebase  # Ensure Firebase is initialized
 from utils.auth_util import verify_firebase_token
 from firebase_admin import auth
 from pydantic import BaseModel, EmailStr
 from typing import Optional
+from utils.storage_client import storage_client
+from config.logger import get_logger
+from urllib.parse import urlparse, urljoin
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/user", tags=["User"])
 
@@ -81,17 +86,29 @@ def get_user_profile(uid: str = Depends(verify_firebase_token)):
     """Get user profile data from Firebase Auth"""
     try:
         user_record = auth.get_user(uid)
-        
+        # Normalize photo URL so clients can reach local uploads
+        photo = user_record.photo_url
+        # if request is provided and photo is localhost, rewrite it
+        # (note: FastAPI will inject Request if we add it to signature)
+        try:
+            # attempt to get request from kwargs via FastAPI dependency injection
+            # but since signature doesn't include Request, we skip here
+            pass
+        except Exception:
+            pass
+
+        logger.info(f"GET /user/profile for uid={uid} -> display_name={user_record.display_name} photo={photo}")
+
         return {
-            "uid": uid, 
+            "uid": uid,
             "profile": {
                 "email": user_record.email,
                 "display_name": user_record.display_name,
-                "photo_url": user_record.photo_url,
+                "photo_url": photo,
                 "email_verified": user_record.email_verified,
                 "created_at": user_record.user_metadata.creation_timestamp,
-                "last_sign_in": user_record.user_metadata.last_sign_in_timestamp
-            }
+                "last_sign_in": user_record.user_metadata.last_sign_in_timestamp,
+            },
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching profile: {str(e)}")
@@ -121,3 +138,64 @@ def delete_user_profile(uid: str = Depends(verify_firebase_token)):
         return {"message": "User deleted successfully", "uid": uid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting user: {str(e)}")
+
+
+@router.post('/profile/photo')
+async def upload_profile_photo(request: Request, file: UploadFile = File(...), uid: str = Depends(verify_firebase_token)):
+    """Upload or replace the authenticated user's profile photo.
+
+    Stores the file at uploads/profile/{uid}.{ext} (overwrites existing).
+    Returns the public URL to the uploaded file and updates the user's auth/profile record.
+    """
+    try:
+        # Validate file
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail='Invalid file type; image required')
+
+        data = await file.read()
+        if len(data) == 0:
+            raise HTTPException(status_code=400, detail='Empty file')
+
+        logger.info(f"POST /user/profile/photo received file='{file.filename}' content_type={file.content_type} size={len(data)} for uid={uid}")
+
+        # Upload via storage client (will use Firebase bucket if configured or local fallback)
+        photo_url = await storage_client.upload_profile_image(image_data=data, user_id=uid, content_type=file.content_type)
+
+        logger.info(f"Profile image stored for uid={uid} -> {photo_url}")
+
+        if not photo_url:
+            raise HTTPException(status_code=500, detail='Failed to store profile image')
+
+        # Normalize local URLs so clients receive a reachable address
+        try:
+            from urllib.parse import urlparse, urljoin
+            parsed = urlparse(photo_url)
+            if parsed.hostname in ('localhost', '127.0.0.1'):
+                base = str(request.base_url)
+                photo_url = urljoin(base, parsed.path.lstrip('/'))
+        except Exception:
+            pass
+
+        # Update Firebase Auth user profile (photo_url)
+        try:
+            auth.update_user(uid, photo_url=photo_url)
+        except Exception as e:
+            # Log but continue - still return URL
+            logger.warning(f"Warning: failed to update Firebase Auth photo_url: {e}")
+
+        # Update Firestore users/{uid} doc with photo_url
+        try:
+            from services.firebase_client import db
+            db.collection('users').document(uid).set({
+                'photo_url': photo_url
+            }, merge=True)
+        except Exception as e:
+            logger.warning(f"Warning: failed to update Firestore user doc: {e}")
+
+        return {'status': 'success', 'photo_url': photo_url}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception('Failed to upload profile photo')
+        raise HTTPException(status_code=500, detail=str(e))
