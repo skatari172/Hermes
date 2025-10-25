@@ -1,4 +1,4 @@
-# Hermes – AI Cultural Companion
+# Hermes – AI Cultural Companion - Ayaan
 
 An intelligent travel companion that helps you understand and document cultural experiences through AI-powered image analysis, conversation, and journaling.
 
