@@ -218,10 +218,9 @@ export default function HomeScreen() {
         // Use centralized apiClient (baseURL resolved dynamically)
 
         // Send message to backend using apiClient with automatic auth
-        const formData = new FormData();
-        formData.append('user_message', messageText);
-        formData.append('user_id', 'demo_user');
-        formData.append('session_id', 'demo_session');
+  const formData = new FormData();
+  formData.append('user_message', messageText);
+  formData.append('session_id', 'demo_session');
 
         const response = await apiClient.post('/api/chat/', formData, {
           headers: {
@@ -393,7 +392,6 @@ export default function HomeScreen() {
         type: 'image/jpeg',
         name: 'image.jpg',
       } as any);
-      formData.append('user_id', 'demo_user');
       formData.append('session_id', 'demo_session');
       
       // Add current location if available
@@ -539,10 +537,9 @@ export default function HomeScreen() {
   
       try {
         // Use centralized apiClient (baseURL resolved dynamically)
-        const formData = new FormData();
-        formData.append('user_message', transcribedText.trim());
-        formData.append('user_id', 'demo_user');
-        formData.append('session_id', 'demo_session');
+  const formData = new FormData();
+  formData.append('user_message', transcribedText.trim());
+  formData.append('session_id', 'demo_session');
 
         const response = await apiClient.post('/api/chat/', formData, {
           headers: {
@@ -693,10 +690,9 @@ export default function HomeScreen() {
     if (ttsEnabled && messageText) {
       try {
         // Use centralized apiClient to call TTS endpoint
-        const formData = new FormData();
-        formData.append('text', messageText);
-        formData.append('user_id', 'demo_user');
-        formData.append('session_id', 'demo_session');
+  const formData = new FormData();
+  formData.append('text', messageText);
+  formData.append('session_id', 'demo_session');
 
         const response = await apiClient.post('/api/voice/speak', formData, {
           headers: {
