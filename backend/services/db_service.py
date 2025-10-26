@@ -202,3 +202,33 @@ def get_journal_entries_by_date(uid: str) -> Dict:
         )
     
     return {"journal_entries": entries_by_date}
+
+def update_journal_entry(uid: str, timestamp: str, summary: str, diary: Optional[str] = None) -> bool:
+    """
+    Update a journal entry by timestamp.
+    """
+    doc_ref = db.collection("journal").document(uid)
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        return False
+    
+    doc_data = doc.to_dict()
+    journal_entries = doc_data.get("conversation", [])
+    
+    # Find the entry with matching timestamp
+    updated = False
+    for entry in journal_entries:
+        if entry.get("timestamp") == timestamp:
+            entry["summary"] = summary
+            if diary is not None:
+                entry["diary"] = diary
+            updated = True
+            break
+    
+    if updated:
+        # Update the entire conversation array
+        doc_ref.update({"conversation": journal_entries})
+        return True
+    
+    return False

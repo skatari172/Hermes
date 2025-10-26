@@ -6,6 +6,10 @@ class JournalEntryRequest(BaseModel):
     photo_url: str
     summary: str
 
+class JournalEntryUpdate(BaseModel):
+    summary: str
+    diary: Optional[str] = None
+
 class ConversationEntry(BaseModel):
     message: str
     response: str
