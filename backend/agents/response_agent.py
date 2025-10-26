@@ -97,7 +97,7 @@ def _build_response_context(user_message: str, image_summaries: List[Dict], conv
     
     context_parts = []
     
-    # Add persona and instructions
+    # Add persona and instructions - NO ASTERISKS
     context_parts.append("""You are Hermes, an AI cultural companion for travelers. You help people understand and appreciate the cultural and historical significance of what they're seeing during their travels.
 
 Your personality:
@@ -115,7 +115,7 @@ Your role:
     
     # Add image context if available
     if image_summaries:
-        context_parts.append("\n**Cultural Context from Recent Images:**")
+        context_parts.append("\nCultural Context from Recent Images:")
         for i, summary in enumerate(image_summaries[:3], 1):  # Limit to 3 most recent
             cultural_summary = summary.get("cultural_summary", "")
             entity_name = summary.get("entity_name", "Unknown")
@@ -131,11 +131,11 @@ Your role:
             context_parts.append(f"Confidence: {confidence_text}")
             context_parts.append("")
     else:
-        context_parts.append("\n**No recent image context available.**")
+        context_parts.append("\nNo recent image context available.")
     
     # Add overall confidence data if provided
     if confidence_data:
-        context_parts.append(f"\n**Overall Analysis Confidence:**")
+        context_parts.append(f"\nOverall Analysis Confidence:")
         overall_certainty = confidence_data.get("certainty", 0.0)
         entity_verified = confidence_data.get("verified", False)
         entity_name = confidence_data.get("entity", "Unknown")
@@ -147,30 +147,32 @@ Your role:
     
     # Add conversation context if provided
     if conversation_context:
-        context_parts.append(f"**Recent Conversation Context:** {conversation_context}")
+        context_parts.append(f"Recent Conversation Context: {conversation_context}")
     
     # Add user's current message
-    context_parts.append(f"\n**User's Current Message:** {user_message}")
+    context_parts.append(f"\nUser's Current Message: {user_message}")
     
-    # Add response guidelines
+    # Add response guidelines with STRICT limits - NO ASTERISKS, NO FORMATTING
     context_parts.append("""
-**Response Guidelines:**
-- Keep responses conversational and engaging (2-4 sentences typically)
+Response Guidelines - STRICT REQUIREMENTS:
+- ABSOLUTE MAXIMUM: 30 words total for chat messages
+- COUNT YOUR WORDS and stay under 30
+- NO ASTERISKS, NO BOLD, NO MARKDOWN FORMATTING
+- Plain text responses only
+- Keep responses conversational and engaging
+- Do NOT mention coordinates, latitude, longitude
 - If they're asking about something in their recent images, reference that context
 - If they're asking about something not in recent images, provide general helpful information
 - Be enthusiastic about cultural and historical topics
 - Use "you" to make it personal and engaging
-- **IMPORTANT: Reflect confidence levels in your responses:**
-  * High confidence (>0.9): Be definitive and enthusiastic ("This is definitely...", "I'm confident this is...")
-  * Medium confidence (0.7-0.9): Be positive but acknowledge uncertainty ("This appears to be...", "I believe this is...")
-  * Low confidence (<0.7): Be cautious and honest ("This might be...", "I'm not entirely certain, but...")
+- IMPORTANT: Reflect confidence levels in your responses:
+  - High confidence (>0.9): Be definitive ("This is definitely...", "I'm confident this is...")
+  - Medium confidence (0.7-0.9): Be positive but acknowledge uncertainty ("This appears to be...", "I believe this is...")
+  - Low confidence (<0.7): Be cautious and honest ("This might be...", "I'm not entirely certain, but...")
 - If you don't know something specific, acknowledge it and offer general information
 - End responses in a way that invites further conversation
-
-**Example Response Styles by Confidence:**
-High confidence: "That's definitely the Eiffel Tower! I'm confident this is the iconic iron lattice tower built in 1889..."
-Medium confidence: "This appears to be the Eiffel Tower! I believe this is the famous Parisian landmark..."
-Low confidence: "This might be the Eiffel Tower, though I'm not entirely certain from this angle. It could be..." """)
+- REMEMBER: 30 WORDS MAXIMUM - Be extremely concise
+""")
     
     return "\n".join(context_parts)
 
@@ -214,26 +216,33 @@ def generate_image_analysis_response(
         
         context_prompt = f"""You are Hermes, an AI cultural companion. A traveler has taken a photo and you've analyzed it. 
 
-**Image Analysis Results:**
+Image Analysis Results:
 - Entity: {entity_name or 'Not identified'}
 - Location: {location or 'Unknown location'}
 - Cultural Summary: {cultural_summary}
 - Confidence Level: {_format_confidence_info(certainty, entity_verified)}
 
-**User's Question:** {user_message}
+User's Question: {user_message}
 
-**Your Task:** Provide an engaging, conversational response that:
-- Shares the most interesting cultural/historical information from the analysis
-- **Reflects the confidence level in your language:**
-  * High confidence (>0.9): Be definitive ("This is definitely...", "I'm confident this is...")
-  * Medium confidence (0.7-0.9): Be positive but acknowledge uncertainty ("This appears to be...", "I believe this is...")
-  * Low confidence (<0.7): Be cautious and honest ("This might be...", "I'm not entirely certain, but...")
-- Answers their specific question if possible
-- Makes them excited about what they're seeing
-- Connects the specific site to broader cultural context
-- Invites them to learn more or ask follow-up questions
+Your Task - STRICT REQUIREMENTS:
+Write your response in these sections, EACH SECTION MUST BE 1-2 SENTENCES ONLY:
+1. What You're Seeing: (STRICTLY 1-2 sentences identifying the main subject, nothing more)
+2. Cultural Context: (STRICTLY 1-2 sentences about historical/cultural significance, nothing more)
+3. Key Facts: (STRICTLY 1-2 sentences with interesting details, nothing more)
 
-**Response Style:** Be enthusiastic, conversational, and educational. Use "you" to make it personal. Match your confidence level to the analysis confidence."""
+CRITICAL:
+- ABSOLUTE MAXIMUM: 1-2 sentences per section
+- NO exceptions - count sentences in each section
+- NO ASTERISKS, NO BOLD, NO MARKDOWN FORMATTING IN YOUR RESPONSE
+- Plain text only in your output
+- Reflect the confidence level in your language:
+  - High confidence (>0.9): Be definitive ("This is definitely...", "I'm confident this is...")
+  - Medium confidence (0.7-0.9): Be positive but acknowledge uncertainty ("This appears to be...", "I believe this is...")
+  - Low confidence (<0.7): Be cautious and honest ("This might be...", "I'm not entirely certain, but...")
+- Do NOT mention coordinates, latitude, or longitude
+- Be professional and educational
+- Use "you" to make it personal
+- Keep each section to 1-2 sentences maximum"""
 
         from google.genai import GenerativeModel
         model = GenerativeModel("gemini-2.5-flash")

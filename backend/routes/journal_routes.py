@@ -428,6 +428,13 @@ async def generate_latest_journal(uid: str = Depends(verify_firebase_token)):
 Write in first person, introspective and emotionally aware, in 2–3 paragraphs.
 Include insights, feelings, or reflections on what was learned or experienced.
 
+CRITICAL REQUIREMENTS:
+1. NEVER mention coordinates, latitude, longitude, or GPS data
+2. NO asterisks (*), NO bold formatting, NO markdown whatsoever
+3. Write naturally and personally, plain text only
+4. Focus on experiences and reflections
+5. Keep it concise and meaningful
+
 Conversation Summary: {conversation_summary}"""
 
         logger.debug(f"Prompt sent to Gemini:\n{prompt}\n")

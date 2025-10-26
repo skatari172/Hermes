@@ -484,6 +484,7 @@ export default function HomeScreen() {
       };
       setMessages(prev => [...prev, userMessage]);
       setInputText(''); // Clear the input
+      setIsLoading(true);
   
       try {
         // Use centralized apiClient (baseURL resolved dynamically)
@@ -558,6 +559,8 @@ export default function HomeScreen() {
           isUser: false
         };
         setMessages(prev => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
       }
     }
   };

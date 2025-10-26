@@ -48,20 +48,25 @@ async def create_diary_entry(user_id: str, conversation_summary: str, photo_url:
         recent_entries = existing_entries.get("entries", [])[-3:]
         logger.info(f"Fetched {len(recent_entries)} recent journal entries for context.")
 
-        # Build context for Gemini
+        # Build context for Gemini - NO ASTERISKS
         context_parts = []
         if recent_entries:
-            context_parts.append("**Recent Journal Entries:**")
+            context_parts.append("Recent Journal Entries:")
             for entry in recent_entries:
                 context_parts.append(f"- {entry.get('summary', 'No summary')}")
             context_parts.append("")
 
-        context_parts.append(f"**Today's Conversation Summary:** {conversation_summary}")
+        context_parts.append(f"Today's Conversation Summary: {conversation_summary}")
         context_parts.append("")
-        context_parts.append("**Instructions:**")
+        context_parts.append("Instructions:")
         context_parts.append("Transform this conversation summary into a personal, reflective diary entry.")
         context_parts.append("Write in first person, introspective and emotionally aware, in 2–3 paragraphs.")
         context_parts.append("Include insights, feelings, or reflections on what was learned or experienced.")
+        context_parts.append("CRITICAL REQUIREMENTS:")
+        context_parts.append("1. NEVER mention coordinates, latitude, longitude, or GPS data")
+        context_parts.append("2. NO asterisks (*), NO bold formatting, NO markdown")
+        context_parts.append("3. Write naturally and personally, focusing on experiences and reflections")
+        context_parts.append("4. Keep it concise and meaningful")
 
         prompt = "\n".join(context_parts)
 

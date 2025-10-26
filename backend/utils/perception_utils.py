@@ -49,39 +49,70 @@ async def analyze_image_with_translation(image_data: str, image_format: str = "b
         # Create image object
         image = Image.open(BytesIO(image_bytes))
         
-        # Prompt that prioritizes translation
-        prompt = """Analyze this image with special focus on text translation and cultural context. 
+        # Prompt that prioritizes translation above all else - NO ASTERISKS
+        prompt = """You are a multilingual OCR and translation expert. Your PRIMARY and MOST IMPORTANT task is to detect and translate ALL foreign text in this image.
 
-PRIORITY ORDER:
-1. TRANSLATE any foreign text you see (signs, menus, documents, etc.)
-2. Identify cultural landmarks, monuments, or significant buildings
-3. Analyze architectural styles and cultural elements
-4. Note any religious, historical, or cultural symbols
-5. Describe the scene and atmosphere
+CRITICAL PRIORITIES (in this exact order):
+1. FIRST and FOREMOST: Scan the entire image for ANY text visible (signs, menus, documents, labels, street signs, etc.)
+2. TRANSLATE every piece of text you find - convert to English
+3. IDENTIFY the source language of each text
+4. If there is ANY text in a foreign language, that MUST be your main focus and MUST be output
+
+IMPORTANT TRANSLATION RULES:
+- Look for text on signs, menus, documents, walls, vehicles, clothing, etc.
+- Translate EVERYTHING - even small text
+- Include the original text, English translation, and detected language
+- If you see foreign characters (Chinese, Arabic, Japanese, etc.), translate them
+- Be thorough - check all parts of the image for text
+
+ADDITIONAL ANALYSIS (only after translation):
+- Identify cultural landmarks
+- Note architectural styles
+- Describe cultural elements
+- Assess atmosphere
+
+CRITICAL FORMATTING RULES FOR YOUR RESPONSE:
+- NO asterisks (*) in any output
+- NO bold formatting in any output
+- Plain text only in translations and summaries
+- NEVER mention coordinates, latitude, or longitude in any descriptions
+- Keep all text clean and simple
 
 Provide your analysis in this JSON format:
 {
-    "scene_summary": "Brief description of what you see",
+    "scene_summary": "Brief description focusing on what text was found and translated",
     "translated_text": [
-        {"original": "foreign text", "translation": "English translation", "language": "detected language"},
-        {"original": "more text", "translation": "translation", "language": "language"}
+        {"original": "complete original foreign text", "translation": "complete English translation", "language": "detected language"},
+        {"original": "another text", "translation": "translation", "language": "language"}
     ],
-    "cultural_landmarks": ["list of landmarks or cultural sites"],
-    "architectural_style": "description of building styles",
-    "cultural_elements": ["religious symbols", "cultural artifacts", "etc"],
-    "atmosphere": "description of the scene's cultural atmosphere",
-    "cultural_notes": ["interesting cultural observations"]
+    "cultural_landmarks": ["list of landmarks"],
+    "architectural_style": "description",
+    "cultural_elements": ["elements"],
+    "atmosphere": "description",
+    "cultural_notes": ["observations"]
 }
 
-Focus heavily on translating any text you see!"""
+TRANSLATION IS YOUR TOP PRIORITY - BE THOROUGH!"""
         
-        response = model.generate_content([prompt, image])
+        # Use generation config to emphasize translation
+        response = model.generate_content(
+            [prompt, image],
+            generation_config={
+                "temperature": 0.1,  # Lower temperature for more focused analysis
+                "max_output_tokens": 2048
+            }
+        )
         response_text = response.text.strip()
         
         # Try to parse JSON response
         try:
             analysis_data = json.loads(response_text)
-            print(f"✅ Image analysis complete with {len(analysis_data.get('translated_text', []))} translations")
+            translations = analysis_data.get('translated_text', [])
+            print(f"✅ Image analysis complete with {len(translations)} translations")
+            if translations:
+                print("📝 DETECTED TRANSLATIONS:")
+                for i, trans in enumerate(translations, 1):
+                    print(f"  {i}. [{trans.get('language', 'unknown')}] {trans.get('original', '')} → {trans.get('translation', '')}")
             return {
                 "success": True,
                 "scene_summary": analysis_data.get("scene_summary", ""),

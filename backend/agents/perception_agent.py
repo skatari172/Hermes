@@ -68,20 +68,27 @@ def analyze_image_perception(image_data: str, image_format: str = "base64") -> D
             "translation_summary": "No text detected due to image loading error",
         }
 
-    # Define the perception prompt
+    # Define the perception prompt - NO ASTERISKS
     prompt = """
     You are the Perception Agent in the Hermes AI travel companion system. Analyze this image and provide a comprehensive visual understanding.
 
     Tasks:
-    1. **Visual Understanding**: Identify visible structures, objects, people, natural features, or symbols. Describe colors, shapes, and patterns.
-    2. **Text Recognition & Translation**: 
+    1. Visual Understanding: Identify visible structures, objects, people, natural features, or symbols. Describe colors, shapes, and patterns.
+    2. Text Recognition & Translation: 
        - Detect ALL visible text (OCR) - signs, menus, street names, building names, etc.
        - Identify the language of each detected text
        - Translate non-English text to English
        - If text is already in English, set translation to the same text
        - Include confidence level for each translation
-    3. **Cultural or Historical Cues**: Describe cultural, artistic, or architectural styles neutrally.
-    4. **Environmental Context**: Note time of day, weather, and scene characteristics.
+    3. Cultural or Historical Cues: Describe cultural, artistic, or architectural styles neutrally.
+    4. Environmental Context: Note time of day, weather, and scene characteristics.
+
+    CRITICAL FORMATTING RULES FOR YOUR RESPONSE:
+    - NO asterisks (*) in any output text
+    - NO bold formatting in any output
+    - Plain text only in all fields
+    - NEVER mention coordinates, latitude, or longitude in descriptions
+    - Keep all text clean and simple
 
     IMPORTANT: For foreign text translation:
     - Always provide both original text and English translation

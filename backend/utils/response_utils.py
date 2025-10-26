@@ -3,6 +3,7 @@ Response Agent Utilities
 Standalone functions for generating cultural responses
 """
 import os
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -52,54 +53,43 @@ async def generate_cultural_response_with_context(user_message: str, context_dat
                 message = turn.get("message", "")
                 conversation_context += f"{role}: {message}\n"
         
-        # Check if this is an initial photo analysis or a follow-up chat message
-        is_followup = len(conversation_history) > 0 and user_message != "Tell me about what I'm seeing in this photo"
+        # For chat messages: Keep responses to 2-3 sentences maximum
+        prompt = f"""You are Hermes. Answer this question in 2-3 sentences maximum.
+
+Question: {user_message}
+
+RULES:
+1. Write exactly 2-3 sentences only
+2. NO asterisks, NO bold, NO formatting
+3. NO section headers like "What You're Seeing"
+4. Plain text - just answer directly
+5. Do NOT mention coordinates, latitude, or longitude
+6. Be concise and helpful
+
+Example response: "Orlando has great spots. Universal Studios offers thrilling rides while Lake Eola Park provides a peaceful downtown escape. Both showcase the city's diverse attractions."
+
+Now answer the user's question in 2-3 sentences: {user_message}"""
         
-        if is_followup:
-            # For follow-up messages: Keep it very concise (1-4 sentences)
-            prompt = f"""You are Hermes, an AI cultural companion. Answer the user's question concisely.
-
-CONTEXT:
-- Entity: {entity}
-- Location: {coordinates.get('lat', 'Unknown')}, {coordinates.get('lng', 'Unknown')}
-- Cultural Summary: {cultural_summary}{conversation_context}
-
-USER QUESTION: {user_message}
-
-CRITICAL INSTRUCTIONS:
-- NEVER mention coordinates, latitude, longitude, or GPS data in your response
-- You may mention the city or region if relevant
-- Keep response to 1-2 sentences for simple questions, 3-4 sentences max for complex questions
-- Be professional and factual
-- If referencing the photo, be brief
-- Answer directly without unnecessary elaboration"""
-        else:
-            # For initial photo analysis: Structured but concise sections
-            prompt = f"""You are Hermes, an AI cultural companion. Analyze this photo professionally.
-
-CONTEXT:
-- Entity: {entity}
-- Location: {coordinates.get('lat', 'Unknown')}, {coordinates.get('lng', 'Unknown')}
-- Cultural Summary: {cultural_summary}{conversation_context}
-
-USER MESSAGE: {user_message}
-
-Format your response with these brief sections:
-1. **What You're Seeing**: (1-2 sentences identifying the main subject)
-2. **Cultural Context**: (1-2 sentences about historical/cultural significance)
-3. **Key Facts**: (1-2 sentences with interesting details)
-4. **Recommendation**: (1-2 sentences if applicable)
-
-CRITICAL GUIDELINES:
-- NEVER mention coordinates, latitude, longitude, or GPS data
-- You may mention the city or region if relevant to cultural context
-- Be professional, not overly enthusiastic
-- Keep each section to 1-2 sentences maximum
-- Focus on factual information
-- Maintain a knowledgeable but concise tone"""
-        
-        response = model.generate_content(prompt)
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "max_output_tokens": 50,  # Limit response tokens
+                "temperature": 0.7
+            }
+        )
         response_text = response.text.strip()
+        
+        # Clean up formatting - remove asterisks and markdown
+        response_text = re.sub(r'\*\*', '', response_text)  # Remove bold markers
+        response_text = re.sub(r'\*', '', response_text)  # Remove any other asterisks
+        response_text = re.sub(r'#+\s*', '', response_text)  # Remove headers
+        response_text = response_text.strip()
+        
+        # Enforce 2-3 sentence limit
+        sentences = re.split(r'[.!?]+', response_text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        if len(sentences) > 3:
+            response_text = ". ".join(sentences[:3]) + "."
         
         return {
             "success": True,

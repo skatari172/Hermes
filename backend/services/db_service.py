@@ -316,7 +316,18 @@ async def generate_and_save_diary_for_user(uid: str):
             return
 
         # Build prompt for LLM
-        prompt = f"""Transform this conversation summary into a personal, reflective diary entry.\n\nWrite in first person, introspective and emotionally aware, in 2–3 paragraphs.\nInclude insights, feelings, or reflections on what was learned or experienced.\n\nConversation Summary: {conversation_summary}"""
+        prompt = f"""Transform this conversation summary into a personal, reflective diary entry.
+
+Write in first person, introspective and emotionally aware, in 2–3 paragraphs.
+Include insights, feelings, or reflections on what was learned or experienced.
+
+CRITICAL REQUIREMENTS:
+1. NEVER mention coordinates, latitude, longitude, or GPS data
+2. NO asterisks (*), NO bold formatting, NO markdown whatsoever
+3. Write naturally and personally, plain text only
+4. Keep it concise and meaningful
+
+Conversation Summary: {conversation_summary}"""
 
         # Call gemini_client.generate_text() - support sync or async implementations
         try:

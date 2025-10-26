@@ -1,5 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, Request, Depends
-from utils.auth_util import verify_firebase_token
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from routes import journal_routes
@@ -51,9 +50,8 @@ def health_check():
 
 @app.post("/api/image/process")
 async def process_image(
-    request: Request,
     image_file: UploadFile = File(...),
-    user_id: str = Depends(verify_firebase_token),
+    user_id: str = Form(default="demo_user"),
     session_id: str = Form(default="demo_session"),
     entity_name: str = Form(default=None),
     user_latitude: str = Form(default=None),
@@ -73,45 +71,6 @@ async def process_image(
         
         # Convert to base64
         image_base64 = base64.b64encode(image_content).decode('utf-8')
-
-        # Upload the image to storage (Firebase or local fallback)
-        try:
-            from utils.storage_client import storage_client
-            from urllib.parse import urlparse, urljoin
-
-            stored = await storage_client.upload_image(
-                image_data=image_content,
-                user_id=user_id,
-                content_type=image_file.content_type
-            )
-
-            # Determine a relative storage path to save in Firestore (e.g., 'uploads/{uid}/file.jpg')
-            relative_path = None
-            if stored:
-                parsed = urlparse(stored)
-                if parsed.scheme and parsed.scheme.startswith('http'):
-                    # If URL contains '/uploads/' in path, use that portion
-                    if '/uploads/' in parsed.path:
-                        relative_path = parsed.path.lstrip('/')
-                    else:
-                        # If it's a GCS URL like https://storage.googleapis.com/<bucket>/<path>
-                        # try to extract the object path after the bucket
-                        path_parts = parsed.path.lstrip('/').split('/', 1)
-                        if len(path_parts) > 1:
-                            relative_path = path_parts[1]
-                        else:
-                            relative_path = parsed.path.lstrip('/')
-                else:
-                    # Assume it's already a storage path like 'uploads/uid/filename'
-                    relative_path = stored.lstrip('/')
-
-            else:
-                relative_path = None
-
-        except Exception as upload_err:
-            print(f"⚠️ Warning: image upload failed: {upload_err}")
-            stored = None
-            relative_path = None
         
         # Extract GPS coordinates from image automatically using location API fallback
         # Priority: 1. User's current location (from frontend), 2. Image EXIF, 3. Location API
@@ -212,28 +171,6 @@ async def process_image(
         chat_sessions[session_key]["last_activity"] = datetime.utcnow().isoformat()
         
         print(f"✅ Context stored in chat session: {session_key}")
-
-        # Step 7: Save conversation entry (append to today's conversation) including photo path and response
-        try:
-            from services.db_service import save_conversation_entry
-
-            conversation_entry = {
-                "message": "[image]",
-                "response": response_result.get('response', ''),
-                "timestamp": datetime.utcnow().isoformat(),
-                "latitude": lat if 'lat' in locals() else None,
-                "longitude": lng if 'lng' in locals() else None,
-                "location_name": geo_context.get('location_name') if isinstance(geo_context, dict) else None,
-                "photo_url": relative_path if relative_path else None,
-                "session_id": session_id
-            }
-
-            # Save to Firestore under conversations/{user_id}
-            if conversation_entry:
-                save_conversation_entry(user_id, conversation_entry)
-                print(f"✅ Saved conversation entry for user {user_id} with photo: {conversation_entry.get('photo_url')}")
-        except Exception as db_err:
-            print(f"⚠️ Failed to save conversation entry: {db_err}")
         
         return {
             "status": "success",
@@ -291,7 +228,7 @@ async def process_image(
 @app.post("/api/voice/transcribe")
 async def transcribe_audio(
     audio_file: UploadFile = File(...),
-    user_id: str = Depends(verify_firebase_token),
+    user_id: str = Form(default="demo_user"),
     session_id: str = Form(default="demo_session")
 ):
     """Transcribe audio file to text using ElevenLabs STT API."""
@@ -394,7 +331,7 @@ async def transcribe_audio(
 @app.post("/api/voice/speak")
 async def text_to_speech(
     text: str = Form(...),
-    user_id: str = Depends(verify_firebase_token),
+    user_id: str = Form(default="demo_user"),
     session_id: str = Form(default="demo_session"),
     voice_id: str = Form(default=None),
     model: str = Form(default="eleven_flash_v2_5")
