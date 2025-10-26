@@ -396,7 +396,7 @@ async def text_to_speech(
     text: str = Form(...),
     user_id: str = Depends(verify_firebase_token),
     session_id: str = Form(default="demo_session"),
-    voice_id: str = Form(default="pNInz6obpgDQGcFmaJgB"),  # Default Adam voice
+    voice_id: str = Form(default=None),
     model: str = Form(default="eleven_flash_v2_5")
 ):
     """ElevenLabs TTS endpoint - Convert text to speech and return audio"""
@@ -410,10 +410,13 @@ async def text_to_speech(
                 "audio_data": None
             }
         
+        # Use voice_id from parameter or default from settings
+        effective_voice_id = voice_id or elevenlabs_client.default_voice_id
+        
         # Generate TTS audio
         audio_bytes = await elevenlabs_client.text_to_speech(
             text=text,
-            voice_id=voice_id,
+            voice_id=effective_voice_id,
             model=model
         )
         
@@ -425,7 +428,7 @@ async def text_to_speech(
             "status": "success",
             "audio_data": audio_base64,
             "text": text,
-            "voice_id": voice_id,
+            "voice_id": effective_voice_id,
             "model": model,
             "user_id": user_id,
             "session_id": session_id,
