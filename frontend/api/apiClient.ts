@@ -1,10 +1,35 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { auth } from '../config/firebase';
 
 // Create axios instance with base configuration
+const resolveBaseUrl = () => {
+  // 1) explicit env override
+  if (process.env.EXPO_PUBLIC_URL) return process.env.EXPO_PUBLIC_URL;
+
+  // 2) when running in Expo, derive host from debuggerHost (works for emulators)
+  try {
+    const manifest: any = Constants.manifest || (Constants as any).expoConfig || {};
+    const debuggerHost = manifest.debuggerHost || manifest.hostUri;
+    if (debuggerHost) {
+      // debuggerHost is like '192.168.1.5:19000' -> take hostname part
+      const host = debuggerHost.split(':')[0];
+      if (host && host !== '::1' && host !== 'localhost') {
+        return `http://${host}:8000`;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // 3) fallback to localhost (useful for web / testing) or the previously used static IP
+  if (Constants.platform?.web) return 'http://localhost:8000';
+  return 'http://10.127.199.242:8000';
+};
+
 const apiClient: AxiosInstance = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_URL || 'http://10.127.199.242:8000',
+  baseURL: resolveBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',

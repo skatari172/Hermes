@@ -116,30 +116,7 @@ export default function HomeScreen() {
       setIsLoading(true);
 
       try {
-        // Auto-detect backend URL
-        const possibleURLs = [
-          process.env.EXPO_PUBLIC_API_URL,
-          'http://localhost:8000',
-          'http://127.0.0.1:8000',
-          'http://10.0.2.2:8000',
-          'http://192.168.1.100:8000',
-          'http://192.168.0.100:8000',
-          'http://192.168.1.101:8000',
-          'http://192.168.0.101:8000',
-        ];
-
-        let backendURL = 'http://localhost:8000';
-        for (const url of possibleURLs) {
-          try {
-            const healthCheck = await fetch(`${url}/health`);
-            if (healthCheck.ok) {
-              backendURL = url;
-              break;
-            }
-          } catch (error) {
-            // Continue to next URL
-          }
-        }
+        // Use centralized apiClient (baseURL resolved dynamically)
 
         // Send message to backend using apiClient with automatic auth
         const formData = new FormData();
@@ -309,33 +286,9 @@ export default function HomeScreen() {
     try {
       console.log('📤 Sending image to Hermes backend...');
       
-      // Auto-detect backend URL (same logic as handleSubmitMessage)
-      const possibleURLs = [
-        process.env.EXPO_PUBLIC_API_URL,
-        'http://localhost:8000',
-        'http://127.0.0.1:8000',
-        'http://10.0.2.2:8000',
-        'http://192.168.1.100:8000',
-        'http://192.168.0.100:8000',
-        'http://192.168.1.101:8000',
-        'http://192.168.0.101:8000',
-      ];
-
-      let backendURL = 'http://localhost:8000';
-      for (const url of possibleURLs) {
-        try {
-          const healthCheck = await fetch(`${url}/health`);
-          if (healthCheck.ok) {
-            backendURL = url;
-            break;
-          }
-        } catch (error) {
-          // Continue to next URL
-        }
-      }
-
       // Create FormData for image upload
       const formData = new FormData();
+      // Backend expects field name 'image_file'
       formData.append('image_file', {
         uri: imageUri,
         type: 'image/jpeg',
@@ -351,19 +304,17 @@ export default function HomeScreen() {
         console.log('📍 Including user location:', currentLocation.latitude, currentLocation.longitude);
       }
 
-      console.log('📤 Sending to:', `${backendURL}/api/image/process`);
+      console.log('📤 Sending image to Hermes backend via apiClient /api/upload/image');
 
-      // Send image to backend for processing
-      const response = await fetch(`${backendURL}/api/image/process`, {
-        method: 'POST',
-        body: formData,
+      // Send image to backend for processing using centralized apiClient
+      const response = await apiClient.post('/api/image/process', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
-      if (response.ok) {
-        const result = await response.json();
+      if (response && response.status === 200) {
+        const result = response.data;
         console.log('📥 Hermes response:', result);
         
         if (result.status === 'success') {
@@ -488,37 +439,12 @@ export default function HomeScreen() {
       setInputText(''); // Clear the input
   
       try {
-        // Auto-detect backend URL (same logic as handleSubmitMessage)
-        const possibleURLs = [
-          'http://10.127.217.215:8000',
-          'http://localhost:8000',
-          'http://127.0.0.1:8000',
-          'http://10.0.2.2:8000',
-          'http://192.168.1.100:8000',
-          'http://192.168.0.100:8000',
-          'http://192.168.1.101:8000',
-          'http://192.168.0.101:8000',
-        ];
-  
-        let backendURL = 'http://localhost:8000';
-        for (const url of possibleURLs) {
-          try {
-            const healthCheck = await fetch(`${url}/health`);
-            if (healthCheck.ok) {
-              backendURL = url;
-              break;
-            }
-          } catch (error) {
-            // Continue to next URL
-          }
-        }
-  
-        // Send message to backend using apiClient with automatic auth
+        // Use centralized apiClient (baseURL resolved dynamically)
         const formData = new FormData();
         formData.append('user_message', transcribedText.trim());
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
-  
+
         const response = await apiClient.post('/api/chat', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
@@ -667,44 +593,20 @@ export default function HomeScreen() {
   const handleTtsForMessage = async (messageText: string) => {
     if (ttsEnabled && messageText) {
       try {
-        // Auto-detect backend URL (same logic as MicButton)
-        const possibleURLs = [
-          process.env.EXPO_PUBLIC_API_URL,
-          'http://localhost:8000',
-          'http://127.0.0.1:8000',
-          'http://10.0.2.2:8000',
-          'http://192.168.1.100:8000',
-          'http://192.168.0.100:8000',
-          'http://192.168.1.101:8000',
-          'http://192.168.0.101:8000',
-        ];
-
-        let backendURL = 'http://localhost:8000';
-        for (const url of possibleURLs) {
-          try {
-            const healthCheck = await fetch(`${url}/health`);
-            if (healthCheck.ok) {
-              backendURL = url;
-              break;
-            }
-          } catch (error) {
-            // Continue to next URL
-          }
-        }
-
-        // Call TTS endpoint
+        // Use centralized apiClient to call TTS endpoint
         const formData = new FormData();
         formData.append('text', messageText);
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
 
-        const response = await fetch(`${backendURL}/api/voice/speak`, {
-          method: 'POST',
-          body: formData,
+        const response = await apiClient.post('/api/voice/speak', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         });
 
-        if (response.ok) {
-          const result = await response.json();
+        if (response && response.status === 200) {
+          const result = response.data;
           if (result.status === 'success' && result.audio_data) {
             // Play the audio
             const audioData = result.audio_data;
