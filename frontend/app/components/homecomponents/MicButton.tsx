@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import apiClient from '../../../api/apiClient';
 // import { voiceAPI } from '../../../api/apiClient'; // Not used in this component
 
 interface MicButtonProps {
@@ -16,37 +17,7 @@ export default function MicButton({ onAudioRecorded, onTranscriptionComplete }: 
 
   const transcribeAudio = async (audioUri: string) => {
     try {
-      // Auto-detect backend URL
-      const possibleURLs = [
-        process.env.EXPO_PUBLIC_API_URL,  // Your computer's actual IP
-        'http://localhost:8000',
-        'http://127.0.0.1:8000',
-        'http://10.0.2.2:8000',
-        'http://192.168.1.100:8000',
-        'http://192.168.0.100:8000',
-        'http://192.168.1.101:8000',
-        'http://192.168.0.101:8000',
-      ];
-
-      let backendURL = 'http://localhost:8000'; // Default fallback
-
-      // Find working backend URL
-      console.log('🔍 Searching for backend...');
-      for (const url of possibleURLs) {
-        try {
-          console.log(`🔍 Trying: ${url}`);
-          const healthCheck = await fetch(`${url}/health`);
-          console.log(`📡 Response from ${url}:`, healthCheck.status);
-          if (healthCheck.ok) {
-            backendURL = url;
-            console.log(`✅ Using backend: ${backendURL}`);
-            break;
-          }
-        } catch (error) {
-          console.log(`❌ Failed to connect to ${url}:`, (error as Error).message);
-        }
-      }
-      console.log(`🎯 Final backend URL: ${backendURL}`);
+      // Use centralized apiClient which resolves baseURL dynamically
 
       // Create a FormData object to send the audio file
       const formData = new FormData();
@@ -73,19 +44,14 @@ export default function MicButton({ onAudioRecorded, onTranscriptionComplete }: 
       formData.append('user_id', 'demo_user');
       formData.append('session_id', 'demo_session');
 
-      // Send to backend transcription endpoint
-      const transcriptionResponse = await fetch(`${backendURL}/api/voice/transcribe`, {
-        method: 'POST',
-        body: formData,
-        // Remove all headers to avoid any restrictions
+      // Send to backend transcription endpoint via apiClient
+      const response = await apiClient.post('/api/voice/transcribe', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       });
 
-      if (!transcriptionResponse.ok) {
-        throw new Error(`Transcription failed: ${transcriptionResponse.statusText}`);
-      }
-
-      const result = await transcriptionResponse.json();
-      return result;
+      return response.data;
     } catch (error) {
       console.error('Error transcribing audio:', error);
       throw error;
