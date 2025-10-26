@@ -169,3 +169,36 @@ def get_journal_entries(uid: str):
     doc_ref = db.collection("journal").document(uid)
     doc = doc_ref.get()
     return doc.to_dict() if doc.exists else {"conversation": []}
+
+def get_journal_entries_by_date(uid: str) -> Dict:
+    """
+    Get journal entries organized by date from the journal collection.
+    """
+    doc_ref = db.collection("journal").document(uid)
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        return {"journal_entries": {}}
+    
+    doc_data = doc.to_dict()
+    journal_entries = doc_data.get("conversation", [])
+    
+    # Group by date
+    entries_by_date = {}
+    for entry in journal_entries:
+        timestamp = entry.get("timestamp", "")
+        if timestamp:
+            # Extract date from timestamp
+            entry_date = timestamp.split("T")[0]  # Gets YYYY-MM-DD
+            if entry_date not in entries_by_date:
+                entries_by_date[entry_date] = []
+            entries_by_date[entry_date].append(entry)
+    
+    # Sort entries within each date by timestamp (newest first)
+    for date_key in entries_by_date:
+        entries_by_date[date_key].sort(
+            key=lambda x: x.get("timestamp", ""), 
+            reverse=True
+        )
+    
+    return {"journal_entries": entries_by_date}

@@ -165,38 +165,51 @@ export default function JournalScreen() {
         setConversationLocations(locationsResponse.data.locations);
       }
 
-      // Load daily conversations for list view
-      const conversationsResponse = await apiClient.get('/journal/conversations');
-      console.log('💬 Conversations response:', conversationsResponse.data);
-      if (conversationsResponse.data && conversationsResponse.data.conversations) {
-        const conversationsData = conversationsResponse.data.conversations;
+      // Load journal entries by date from journal collection
+      const journalResponse = await apiClient.get('/journal/entries');
+      console.log('📖 Journal entries response:', journalResponse.data);
+      if (journalResponse.data && journalResponse.data.journal_entries) {
+        const journalData = journalResponse.data.journal_entries;
         
-        // Group conversations by date and create daily conversation objects
-        const dailyConversationsData: DailyConversation[] = Object.entries(conversationsData)
-          .map(([date, conversations]: [string, any]) => {
-            const conversationArray = Array.isArray(conversations) ? conversations : [];
-            const locations = conversationArray
-              .filter((conv: ConversationEntry) => conv.latitude && conv.longitude)
-              .map((conv: ConversationEntry) => ({
-                latitude: conv.latitude!,
-                longitude: conv.longitude!,
-                location_name: conv.location_name || 'Unknown Location'
+        // Transform journal entries into daily format
+        const dailyConversationsData: DailyConversation[] = Object.entries(journalData)
+          .map(([date, entries]: [string, any]) => {
+            const entryArray = Array.isArray(entries) ? entries : [];
+            
+            // Transform journal entries into the format expected by the UI
+            const conversations = entryArray.map((entry: any) => ({
+              message: entry.summary || "Journal Entry",
+              response: entry.diary || entry.summary || "No summary available",
+              timestamp: entry.timestamp || "",
+              latitude: undefined,
+              longitude: undefined,
+              location_name: undefined,
+              photo_url: entry.photoUrl,
+              session_id: ""
+            }));
+
+            const locations = entryArray
+              .filter((entry: any) => entry.latitude && entry.longitude)
+              .map((entry: any) => ({
+                latitude: entry.latitude!,
+                longitude: entry.longitude!,
+                location_name: entry.location_name || 'Unknown Location'
               }));
 
             return {
               date,
-              conversations: conversationArray,
-              totalMessages: conversationArray.length,
+              conversations,
+              totalMessages: entryArray.length,
               locations
             };
           })
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort by date descending
 
-        console.log('📅 Daily conversations data:', dailyConversationsData);
+        console.log('📅 Daily journal entries:', dailyConversationsData);
         setDailyConversations(dailyConversationsData);
       }
     } catch (error) {
-      console.error('❌ Error loading conversation data:', error);
+      console.error('❌ Error loading journal data:', error);
     }
   };
 
@@ -273,7 +286,7 @@ export default function JournalScreen() {
         </View>
 
         {/* Show preview of conversations */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.conversationPreviewScroll}>
+        <View style={styles.conversationPreviewContainer}>
           {item.conversations.slice(0, 3).map((conversation, index) => (
             <TouchableOpacity 
               key={index} 
@@ -281,13 +294,6 @@ export default function JournalScreen() {
               onPress={() => handleConversationPress(conversation)}
               activeOpacity={0.7}
             >
-              {conversation.photo_url && (
-                <Image 
-                  source={{ uri: conversation.photo_url }} 
-                  style={styles.conversationPreviewImage}
-                  resizeMode="cover"
-                />
-              )}
               <View style={styles.conversationPreviewContent}>
                 <Text style={styles.conversationPreviewMessage} numberOfLines={2}>
                   {conversation.message}
@@ -304,6 +310,15 @@ export default function JournalScreen() {
                   </View>
                 )}
               </View>
+
+              {/* Image AFTER content so text always hugs the top */}
+              {conversation.photo_url && (
+                <Image 
+                  source={{ uri: conversation.photo_url }} 
+                  style={[styles.conversationPreviewImage, { marginTop: 8, marginBottom: 0 }]}
+                  resizeMode="cover"
+                />
+              )}
             </TouchableOpacity>
           ))}
           
@@ -315,7 +330,7 @@ export default function JournalScreen() {
               </Text>
             </View>
           )}
-        </ScrollView>
+        </View>
       </View>
     );
   };
@@ -627,23 +642,30 @@ const styles = StyleSheet.create({
   conversationPreviewScroll: {
     marginTop: 8,
   },
+  conversationPreviewContainer: {
+    marginTop: 8,
+    gap: 12,
+  },
   conversationPreviewCard: {
-    width: 200,
+    width: '100%',
+    minHeight: 250,
     backgroundColor: '#f8f9fa',
     borderRadius: 8,
     padding: 12,
-    marginRight: 12,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#e9ecef',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
   },
   conversationPreviewImage: {
     width: '100%',
     height: 80,
     borderRadius: 6,
-    marginBottom: 8,
+    marginBottom: 0,
   },
   conversationPreviewContent: {
-    flex: 1,
+    width: '100%',
   },
   conversationPreviewMessage: {
     fontSize: 14,
