@@ -23,7 +23,8 @@ async def text_to_speech(
     text: str = Form(...),
     voice_id: Optional[str] = Form(None),
     user_id: str = Depends(verify_firebase_token),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    speed: Optional[float] = Form(1.0)
 ):
     """
     Convert text to speech using ElevenLabs API.
@@ -33,6 +34,7 @@ async def text_to_speech(
         voice_id: Optional voice ID (uses default if not provided)
         user_id: User identifier
         session_id: Session identifier
+        speed: Speech speed multiplier (1.0 = normal, >1.0 = faster, <1.0 = slower)
         
     Returns:
         Audio stream in MP3 format
@@ -43,7 +45,8 @@ async def text_to_speech(
         # Generate audio
         audio_bytes = await elevenlabs_client.text_to_speech(
             text=text,
-            voice_id=voice_id
+            voice_id=voice_id,
+            speed=speed
         )
         
         # Return audio as streaming response
@@ -65,7 +68,8 @@ async def text_to_speech_stream(
     text: str = Form(...),
     voice_id: Optional[str] = Form(None),
     user_id: str = Depends(verify_firebase_token),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    speed: Optional[float] = Form(1.0)
 ):
     """
     Stream text-to-speech conversion for real-time audio.
@@ -86,7 +90,8 @@ async def text_to_speech_stream(
             try:
                 async for chunk in elevenlabs_client.stream_text_to_speech(
                     text=text,
-                    voice_id=voice_id
+                    voice_id=voice_id,
+                    speed=speed
                 ):
                     yield chunk
             except Exception as e:
