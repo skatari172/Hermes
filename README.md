@@ -90,8 +90,9 @@ FIREBASE_APP_ID=your_id
 - `GET /api/journal` - Get user journals
 
 Docs: `http://localhost:8000/docs`
-Contributors:
-Sujan Katari: Multi-Agent Orchestration + Backend
-Nick Gonzalez: Database + Fullstack
-Vignesh Sundararajan: Fullstack + Voice Functionality
-Ayaan Khan: Image Processing + Frontend (Camera Functionality)
+Contributors:  
+  
+Sujan Katari: Multi-Agent Orchestration + Backend  
+Nick Gonzalez: Database + Fullstack  
+Vignesh Sundararajan: Fullstack + Voice Functionality  
+Ayaan Khan: Image Processing + Frontend (Camera Functionality)  
