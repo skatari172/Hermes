@@ -2,7 +2,12 @@
 from fastapi import APIRouter, Depends, Header, HTTPException
 from datetime import datetime, date
 from utils.auth_util import verify_firebase_token
-from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations
+from services.db_service import save_journal_entry, get_journal_entries
+from models.journal import JournalEntryRequest
+from config.logger import get_logger
+from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations, get_journal_entries_by_date, update_journal_entry
+from models.journal import JournalEntryRequest, ConversationEntry, JournalEntryUpdate
+from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations, get_journal_entries_by_date
 from models.journal import JournalEntryRequest, ConversationEntry
 from config.logger import get_logger
 from firebase_admin import auth
@@ -138,6 +143,25 @@ def get_journal_entries_by_date_endpoint(uid: str = Depends(verify_firebase_toke
     """Get journal entries organized by date from journal collection"""
     entries = get_journal_entries_by_date(uid)
     return entries
+
+@router.get("/entries")
+def get_journal_entries_by_date_endpoint(uid: str = Depends(verify_firebase_token)):
+    """Get journal entries organized by date from journal collection"""
+    entries = get_journal_entries_by_date(uid)
+    return entries
+
+@router.patch("/entries/{timestamp}")
+def update_journal_entry_endpoint(
+    timestamp: str,
+    update_data: JournalEntryUpdate,
+    uid: str = Depends(verify_firebase_token)
+):
+    """Update a journal entry by timestamp"""
+    success = update_journal_entry(uid, timestamp, update_data.summary, update_data.diary)
+    if success:
+        return {"message": "Journal entry updated successfully", "success": True}
+    else:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
 
 @router.get("/history")
 def get_user_journal(uid: str = Depends(verify_firebase_token)):

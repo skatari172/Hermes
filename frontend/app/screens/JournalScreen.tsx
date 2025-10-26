@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Modal, TouchableOpacity, ScrollView, FlatList, Image, PanResponder, Animated, RefreshControl } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ActivityIndicator, Modal, TouchableOpacity, ScrollView, FlatList, Image, PanResponder, Animated, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
 import type { LocationObjectCoords } from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -68,6 +68,12 @@ export default function JournalScreen() {
   // Conversation detail modal states
   const [showConversationModal, setShowConversationModal] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<ConversationLocation | null>(null);
+  
+  // Edit mode states
+  const [isEditing, setIsEditing] = useState(false);
+  const [editableMessage, setEditableMessage] = useState('');
+  const [editableResponse, setEditableResponse] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Swipe gesture states for modal
   const [modalTranslateY] = useState(new Animated.Value(0));
@@ -236,6 +242,50 @@ export default function JournalScreen() {
   const handleCloseConversationDetail = () => {
     setShowConversationModal(false);
     setSelectedConversation(null);
+    setIsEditing(false);
+    setEditableMessage('');
+    setEditableResponse('');
+  };
+
+  const handleEditPress = () => {
+    if (selectedConversation) {
+      setEditableMessage(selectedConversation.message);
+      setEditableResponse(selectedConversation.response);
+      setIsEditing(true);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedConversation) return;
+    
+    setIsSaving(true);
+    try {
+      await apiClient.patch(`/journal/entries/${selectedConversation.timestamp}`, {
+        summary: editableMessage,
+        diary: editableResponse
+      });
+      
+      // Update local state
+      selectedConversation.message = editableMessage;
+      selectedConversation.response = editableResponse;
+      
+      // Refresh the data
+      await loadConversationData();
+      
+      setIsEditing(false);
+      alert('Journal entry updated successfully!');
+    } catch (error) {
+      console.error('Error updating journal entry:', error);
+      alert('Failed to update journal entry');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditableMessage('');
+    setEditableResponse('');
   };
 
   const onRefresh = useCallback(() => {
@@ -464,18 +514,23 @@ export default function JournalScreen() {
         transparent={true}
         onRequestClose={handleCloseConversationDetail}
       >
-        <View style={journalStyles.pinDetailModalOverlay}>
-          <Animated.View 
-            style={[
-              journalStyles.pinDetailModalContent,
-              {
-                transform: [{ translateY: modalTranslateY }],
-                opacity: modalOpacity,
-              }
-            ]}
-          >
-            {selectedConversation && (
-              <View style={{ flex: 1 }}>
+        <KeyboardAvoidingView 
+          style={{ flex: 1 }} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          <View style={journalStyles.pinDetailModalOverlay}>
+            <Animated.View 
+              style={[
+                journalStyles.pinDetailModalContent,
+                {
+                  transform: [{ translateY: modalTranslateY }],
+                  opacity: modalOpacity,
+                }
+              ]}
+            >
+              {selectedConversation && (
+                <View style={{ flex: 1 }}>
                 {/* Fixed Header */}
                 <View 
                   style={[journalStyles.pinDetailHeader, { backgroundColor: '#007AFF' }]}
@@ -548,48 +603,98 @@ export default function JournalScreen() {
                       // Single conversation
                       <>
                         <Text style={journalStyles.pinDetailLabel}>Title</Text>
-                        <Text style={journalStyles.pinDetailDescription}>
-                          {selectedConversation.message}
-                        </Text>
+                        {isEditing ? (
+                          <TextInput
+                            style={styles.editTextInput}
+                            value={editableMessage}
+                            onChangeText={setEditableMessage}
+                            multiline
+                            placeholder="Enter title..."
+                          />
+                        ) : (
+                          <Text style={journalStyles.pinDetailDescription}>
+                            {selectedConversation.message}
+                          </Text>
+                        )}
 
                         <Text style={journalStyles.pinDetailLabel}>Diary Entry</Text>
-                        <Text style={journalStyles.pinDetailDescription}>
-                          {selectedConversation.response}
-                        </Text>
+                        {isEditing ? (
+                          <TextInput
+                            style={styles.editTextInput}
+                            value={editableResponse}
+                            onChangeText={setEditableResponse}
+                            multiline
+                            placeholder="Enter diary entry..."
+                          />
+                        ) : (
+                          <Text style={journalStyles.pinDetailDescription}>
+                            {selectedConversation.response}
+                          </Text>
+                        )}
                       </>
                     )}
                   </View>
                 </ScrollView>
 
-                {/* Fixed Bottom Button - only show if there's a location */}
-                {selectedConversation.latitude && selectedConversation.longitude ? (
-                  <View style={journalStyles.pinDetailBottomSection}>
-                    {location && (
-                      <Text style={journalStyles.pinDetailDistanceButton}>
-                        {calculateDistance(location, selectedConversation.latitude, selectedConversation.longitude)} away
-                      </Text>
-                    )}
-                    <TouchableOpacity 
-                      style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#007AFF' }]}
-                      onPress={async () => {
-                        const success = await handleNavigateToPin(
-                          location, 
-                          selectedConversation.latitude, 
-                          selectedConversation.longitude
-                        );
-                        if (success) {
-                          setShowConversationModal(false);
-                        }
-                      }}
-                    >
-                      <Text style={journalStyles.pinDetailDirectionsButtonText}>Get Directions</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
+                {/* Fixed Bottom Buttons */}
+                <View style={journalStyles.pinDetailBottomSection}>
+                  {isEditing ? (
+                    <>
+                      <TouchableOpacity 
+                        style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#34C759', marginRight: 8 }]}
+                        onPress={handleSaveEdit}
+                        disabled={isSaving}
+                      >
+                        <Text style={journalStyles.pinDetailDirectionsButtonText}>
+                          {isSaving ? 'Saving...' : 'Save'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#8E8E93' }]}
+                        onPress={handleCancelEdit}
+                        disabled={isSaving}
+                      >
+                        <Text style={journalStyles.pinDetailDirectionsButtonText}>Cancel</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <TouchableOpacity 
+                        style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#007AFF', marginRight: 8 }]}
+                        onPress={handleEditPress}
+                      >
+                        <Text style={journalStyles.pinDetailDirectionsButtonText}>Edit</Text>
+                      </TouchableOpacity>
+                      {selectedConversation.latitude && selectedConversation.longitude && location && (
+                        <>
+                          <Text style={journalStyles.pinDetailDistanceButton}>
+                            {calculateDistance(location, selectedConversation.latitude, selectedConversation.longitude)} away
+                          </Text>
+                          <TouchableOpacity 
+                            style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#007AFF' }]}
+                            onPress={async () => {
+                              const success = await handleNavigateToPin(
+                                location, 
+                                selectedConversation.latitude, 
+                                selectedConversation.longitude
+                              );
+                              if (success) {
+                                setShowConversationModal(false);
+                              }
+                            }}
+                          >
+                            <Text style={journalStyles.pinDetailDirectionsButtonText}>Get Directions</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </>
+                  )}
+                </View>
               </View>
             )}
-          </Animated.View>
-        </View>
+            </Animated.View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -760,5 +865,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
+  },
+  editTextInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: '#333',
+    backgroundColor: '#fff',
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
 });
