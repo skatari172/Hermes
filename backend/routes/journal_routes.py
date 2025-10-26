@@ -84,6 +84,128 @@ def get_user_conversations(
     print(f"📋 Found conversations: {conversations}")
     return conversations
 
+@router.get("/conversations/all")
+def get_all_users_conversations(
+    uid: str = Depends(get_user_id),
+    limit: int = 50
+):
+    """Get conversations from all registered users for social feed"""
+    print(f"🔍 Getting all users' conversations for social feed (requested by: {uid})")
+    
+    try:
+        from services.firebase_client import db
+        from firebase_admin import auth
+        
+        all_conversations = []
+        user_profiles = {}
+        
+        # Get all documents from the journal collection
+        journal_docs = db.collection("journal").stream()
+        
+        for doc in journal_docs:
+            user_id = doc.id
+            doc_data = doc.to_dict()
+            
+            if not doc_data:
+                print(f"⚠️ User {user_id} has no data")
+                continue
+            
+            print(f"🔍 Processing user {user_id}, doc_data keys: {list(doc_data.keys())}")
+            
+            # Get user profile information
+            try:
+                user_record = auth.get_user(user_id)
+                user_profiles[user_id] = {
+                    "name": user_record.display_name or "Anonymous User",
+                    "username": user_record.email.split("@")[0] if user_record.email else f"user_{user_id[:8]}",
+                    "avatar": user_record.photo_url
+                }
+            except Exception as e:
+                print(f"⚠️ Could not get profile for user {user_id}: {e}")
+                user_profiles[user_id] = {
+                    "name": "Anonymous User",
+                    "username": f"user_{user_id[:8]}",
+                    "avatar": None
+                }
+            
+            # Check for 'conversation' key (array format) first
+            if 'conversation' in doc_data and isinstance(doc_data['conversation'], list):
+                print(f"📝 Found conversation array for user {user_id}: {len(doc_data['conversation'])} entries")
+                for i, entry in enumerate(doc_data['conversation']):
+                    if isinstance(entry, dict):
+                        # Add user info and append to all_conversations
+                        conversation_with_user = {
+                            **entry,
+                            'user_id': user_id,
+                            'user_profile': user_profiles[user_id]
+                        }
+                        all_conversations.append(conversation_with_user)
+                        print(f"  ✅ Added entry {i+1}: {entry.get('summary', 'No summary')[:50]}...")
+                    else:
+                        print(f"  ⚠️ Entry {i} is not a dict: {type(entry)}")
+            
+            # Also check for date-keyed format (fallback for old data structure)
+            for key, value in doc_data.items():
+                # Skip the 'conversation' key we already processed
+                if key == 'conversation':
+                    continue
+                    
+                # Check if this looks like a date key (YYYY-MM-DD format)
+                if isinstance(value, list) and '-' in key:
+                    print(f"📅 Found date-keyed conversations for user {user_id} on {key}: {len(value)} entries")
+                    for i, entry in enumerate(value):
+                        if isinstance(entry, dict):
+                            conversation_with_user = {
+                                **entry,
+                                'user_id': user_id,
+                                'user_profile': user_profiles[user_id]
+                            }
+                            all_conversations.append(conversation_with_user)
+                            print(f"  ✅ Added entry {i+1} from {key}")
+        
+        print(f"\n📊 Total conversations collected: {len(all_conversations)}")
+        
+        # Remove duplicates based on timestamp and user_id
+        seen_entries = set()
+        unique_conversations = []
+        
+        for entry in all_conversations:
+            # Create a unique key
+            timestamp = entry.get('timestamp', '')
+            user_id = entry.get('user_id', '')
+            message = entry.get('message', '')[:50]  # First 50 chars of message
+            
+            unique_key = f"{user_id}-{timestamp}-{hash(message)}"
+            
+            if unique_key not in seen_entries:
+                seen_entries.add(unique_key)
+                unique_conversations.append(entry)
+        
+        print(f"📊 Unique conversations after deduplication: {len(unique_conversations)}")
+        
+        # Sort by timestamp (newest first)
+        unique_conversations.sort(
+            key=lambda x: x.get('timestamp', ''), 
+            reverse=True
+        )
+        
+        # Apply limit
+        limited_conversations = unique_conversations[:limit]
+        
+        print(f"✅ Returning {len(limited_conversations)} conversations from {len(user_profiles)} users\n")
+        
+        return {
+            "conversations": limited_conversations,
+            "total_count": len(unique_conversations),
+            "user_count": len(user_profiles)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error getting all users' conversations: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching conversations: {str(e)}")
+
 @router.get("/debug/user")
 def debug_user_info(uid: str = Depends(get_user_id)):
     """Debug endpoint to check user ID and available conversations"""

@@ -51,50 +51,44 @@ export default function SocialFeed() {
     
     console.log('🔄 Converting conversations data:', conversationsData);
     
-    // Handle the actual API response structure: {conversations: {date: [entries]}}
+    // Handle the new API response structure: {conversations: [entries]}
     if (conversationsData && conversationsData.conversations) {
       const conversations = conversationsData.conversations;
       console.log('📅 Processing conversations:', conversations);
       
-      // Iterate through each date's conversations
-      Object.keys(conversations).forEach(date => {
-        const dailyConversations = conversations[date];
-        console.log(`📝 Processing ${date}:`, dailyConversations);
+      // Process each conversation entry
+      conversations.forEach((entry: any, index: number) => {
+        console.log(`📄 Creating post from entry ${index}:`, entry);
         
-        if (Array.isArray(dailyConversations)) {
-          dailyConversations.forEach((entry, index) => {
-            console.log(`📄 Creating post from entry ${index}:`, entry);
-            // Create a post from each conversation entry
-            const post: SocialPost = {
-              id: `${entry.session_id}-${date}-${index}`,
-              user: {
-                name: 'Travel Journal',
-                username: 'journal',
-                avatar: undefined,
-              },
-              content: `${entry.message}\n\n${entry.response}`,
-              image: entry.photo_url,
-              timestamp: entry.timestamp,
-              likes: Math.floor(Math.random() * 20), // Random likes for demo
-              comments: Math.floor(Math.random() * 5),
-              isLiked: false,
-              location: entry.location_name,
-            };
-            socialPosts.push(post);
-          });
-        }
+        // Create a post from each conversation entry
+        const post: SocialPost = {
+          id: `${entry.user_id}-${entry.session_id}-${index}`,
+          user: {
+            name: entry.user_profile?.name || 'Anonymous User',
+            username: entry.user_profile?.username || `user_${entry.user_id?.slice(0, 8)}`,
+            avatar: entry.user_profile?.avatar,
+          },
+          content: `${entry.message}\n\n${entry.response}`,
+          image: entry.photo_url,
+          timestamp: entry.timestamp,
+          likes: Math.floor(Math.random() * 20), // Random likes for demo
+          comments: Math.floor(Math.random() * 5),
+          isLiked: false,
+          location: entry.location_name,
+        };
+        socialPosts.push(post);
       });
     }
     
     console.log(`✅ Created ${socialPosts.length} social posts`);
     
-    // Sort by timestamp (newest first)
+    // Sort by timestamp (newest first) - this should already be done by the API
     return socialPosts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   };
 
   const loadJournalData = async () => {
     try {
-      console.log('📱 Loading journal data for social feed...');
+      console.log('📱 Loading all users\' journal data for social feed...');
       
       // Check if user is authenticated with Firebase
       const currentUser = auth.currentUser;
@@ -109,31 +103,17 @@ export default function SocialFeed() {
       const token = await currentUser.getIdToken();
       console.log('🔑 Firebase token obtained');
       
-      // Try to get user's conversations using the authenticated API
-      const conversationsResponse = await apiClient.get('/journal/conversations');
-      console.log('💬 Journal conversations:', conversationsResponse.data);
+      // Get all users' conversations using the new endpoint
+      const conversationsResponse = await apiClient.get('/journal/conversations/all?limit=50');
+      console.log('💬 All users\' conversations:', conversationsResponse.data);
       
       if (conversationsResponse.data && conversationsResponse.data.conversations) {
         const journalPosts = convertJournalToPosts(conversationsResponse.data);
         setPosts(journalPosts);
-        console.log(`📝 Converted ${journalPosts.length} journal entries to social posts`);
+        console.log(`📝 Converted ${journalPosts.length} journal entries to social posts from ${conversationsResponse.data.user_count} users`);
       } else {
-        // If no conversations, create a test conversation
-        console.log('📝 No conversations found, creating test conversation...');
-        try {
-          const testResponse = await apiClient.post('/journal/debug/test-conversation');
-          console.log('✅ Test conversation created:', testResponse.data);
-          
-          // Reload conversations after creating test data
-          const newConversationsResponse = await apiClient.get('/journal/conversations');
-          if (newConversationsResponse.data && newConversationsResponse.data.conversations) {
-            const journalPosts = convertJournalToPosts(newConversationsResponse.data);
-            setPosts(journalPosts);
-            console.log(`📝 Converted ${journalPosts.length} journal entries to social posts`);
-          }
-        } catch (testError) {
-          console.error('❌ Error creating test conversation:', testError);
-        }
+        console.log('📝 No conversations found from any users');
+        setPosts([]);
       }
     } catch (error) {
       console.error('❌ Error loading journal data:', error);
