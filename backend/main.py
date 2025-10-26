@@ -1,5 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from routes import journal_routes
 from services.firebase_client import initialize_firebase  # Initialize Firebase first
 from routes import user_routes
@@ -21,6 +22,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI(title="Hermes API", description="Personal AI Assistant API")
+
+# Mount static files directory for serving uploaded images
+uploads_dir = os.path.join(os.getcwd(), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # Add CORS middleware - Allow all origins for development
 app.add_middleware(

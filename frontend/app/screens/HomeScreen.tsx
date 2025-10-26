@@ -4,6 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraButton, MicButton, TextInput } from '../components/homecomponents';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
+import * as Location from 'expo-location';
+import apiClient from '../../api/apiClient';
+import { journalAPI } from '../../api/apiClient';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function HomeScreen() {
   const [messages, setMessages] = useState<Array<{id: string, text: string, timestamp: Date, isUser: boolean, imageUri?: string}>>([]);
@@ -11,6 +15,29 @@ export default function HomeScreen() {
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Request location permission and get current location
+  useEffect(() => {
+    (async () => {
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('Location permission denied');
+          return;
+        }
+        
+        let location = await Location.getCurrentPositionAsync({});
+        setCurrentLocation({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude
+        });
+        console.log('📍 Current location set:', location.coords.latitude, location.coords.longitude);
+      } catch (error) {
+        console.error('Error getting location:', error);
+      }
+    })();
+  }, []);
+  const { user } = useAuth();
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -35,6 +62,43 @@ export default function HomeScreen() {
     
     return currentTime.getMinutes() !== previousTime.getMinutes() || 
            currentTime.getHours() !== previousTime.getHours();
+  };
+
+  const handleGenerateJournal = async () => {
+    try {
+      // Use the same Bearer token as in your curl command
+      const token = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjdlYTA5ZDA1NzI2MmU2M2U2MmZmNzNmMDNlMDRhZDI5ZDg5Zjg5MmEiLCJ0eXAiOiJKV1QifQ.eyJuYW1lIjoiTmljayBHb256YWxleiIsImlzcyI6Imh0dHBzOi8vc2VjdXJldG9rZW4uZ29vZ2xlLmNvbS9oZXJtZXMtNTIxZjkiLCJhdWQiOiJoZXJtZXMtNTIxZjkiLCJhdXRoX3RpbWUiOjE3NjE0MjUxMzQsInVzZXJfaWQiOiI0aHlKcVNYY09pZTJVbExFdFc3TmNYYlNheEEzIiwic3ViIjoiNGh5SnFTWGNPaWUyVWxMRXRXN05jWGJTYXhBMyIsImlhdCI6MTc2MTQyNTEzNCwiZXhwIjoxNzYxNDI4NzM0LCJlbWFpbCI6ImJvYm9yYW4xNEBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsImZpcmViYXNlIjp7ImlkZW50aXRpZXMiOnsiZW1haWwiOlsiYm9ib3JhbjE0QGdtYWlsLmNvbSJdfSwic2lnbl9pbl9wcm92aWRlciI6InBhc3N3b3JkIn19.zsjYTwHTGmIQpCGOj_PmbsFB51f7idcAfUQSqvA76ba7XwD8E7BBwTCmcGjEqnTpg65YkXGQZxcobeuYXapixJTO7ID0O0gmaMyzpO3-IXEqSflred9V1HSAYbADi-ACbvoVufDhq0pTsyHiNaGA0GIj64GF5-Eh9bi99hZAZPsfdWqCeGKshW7pLgb_oFrNjrECrxsGGx3CsfBKrstO9TrFRVS-vY9yjXUqxzZPYf6uckAEjtqfKnzAdM8iY_N7xqsnyVQgfJDnRj5AVD8fePkb3TA-Rr7qqJrGAKOSyXScCCHTNivGAecDXUvcmBBNzR3pNnkXbs-O51MvwPsc1A";
+      
+      // Show loading alert
+      Alert.alert('Generating Journal', 'Creating journal entry from your conversation...');
+      
+      // Call the generate-latest endpoint
+      const res = await journalAPI.generateFromLatest(token);
+      const data = res.data;
+      
+      if (data && data.success) {
+        // Show the generated journal entry
+        Alert.alert(
+          'Journal Entry Generated!', 
+          `Your journal entry has been created:\n\n${data.diary_entry?.substring(0, 200)}...`,
+          [
+            { text: 'OK' },
+            { 
+              text: 'View Full Entry', 
+              onPress: () => {
+                Alert.alert('Full Journal Entry', data.diary_entry || 'No content available');
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Generation Failed', data?.message || 'Failed to generate journal entry. Make sure you have had a conversation first.');
+      }
+    } catch (e: any) {
+      console.error('Generate journal failed:', e?.response?.data || e?.message || e);
+      const errorMessage = e?.response?.data?.message || e?.message || 'Failed to generate journal entry.';
+      Alert.alert('Error', errorMessage);
+    }
   };
 
   const handleSubmitMessage = async () => {
@@ -76,19 +140,20 @@ export default function HomeScreen() {
           }
         }
 
-        // Send message to backend
+        // Send message to backend using apiClient with automatic auth
         const formData = new FormData();
         formData.append('user_message', messageText);
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
 
-        const response = await fetch(`${backendURL}/api/chat`, {
-          method: 'POST',
-          body: formData,
+        const response = await apiClient.post('/api/chat', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         });
 
-        if (response.ok) {
-          const result = await response.json();
+        if (response.status === 200) {
+          const result = response.data;
           if (result.status === 'success') {
             // Add bot response to messages
             const botMessage = {
@@ -440,19 +505,20 @@ export default function HomeScreen() {
           }
         }
   
-        // Send message to backend
+        // Send message to backend using apiClient with automatic auth
         const formData = new FormData();
         formData.append('user_message', transcribedText.trim());
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
   
-        const response = await fetch(`${backendURL}/api/chat`, {
-          method: 'POST',
-          body: formData,
+        const response = await apiClient.post('/api/chat', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         });
   
-        if (response.ok) {
-          const result = await response.json();
+        if (response.status === 200) {
+          const result = response.data;
           if (result.status === 'success') {
             // Add bot response to messages
             const botMessage = {
@@ -678,6 +744,13 @@ export default function HomeScreen() {
                 size={20} 
                 color={ttsEnabled ? "#FFFFFF" : "#01AFD1"} 
               />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.ttsToggle}
+              onPress={handleGenerateJournal}
+              accessibilityLabel="Generate journal from latest"
+            >
+              <Ionicons name="book-outline" size={20} color="#01AFD1" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuButton}>
               <Ionicons name="ellipsis-horizontal" size={24} color="#FFFFFF" />
