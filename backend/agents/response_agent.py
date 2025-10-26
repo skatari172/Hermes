@@ -17,7 +17,8 @@ def generate_cultural_response(
     user_id: str,
     session_id: str,
     image_summaries: List[Dict] = None,
-    conversation_context: str = ""
+    conversation_context: str = "",
+    confidence_data: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Generate a conversational response based on cultural context and user message.
@@ -28,6 +29,7 @@ def generate_cultural_response(
         session_id: Session identifier
         image_summaries: List of cultural summaries from images
         conversation_context: Additional conversation context
+        confidence_data: Confidence ratings and verification data
         
     Returns:
         Response with text and metadata
@@ -53,7 +55,7 @@ def generate_cultural_response(
                 image_summaries = []
         
         # Build context for the LLM
-        context_prompt = _build_response_context(user_message, image_summaries, conversation_context)
+        context_prompt = _build_response_context(user_message, image_summaries, conversation_context, confidence_data)
         
         # Generate response using Gemini
         from google.genai import GenerativeModel
@@ -90,7 +92,7 @@ def generate_cultural_response(
             "timestamp": datetime.utcnow().isoformat()
         }
 
-def _build_response_context(user_message: str, image_summaries: List[Dict], conversation_context: str) -> str:
+def _build_response_context(user_message: str, image_summaries: List[Dict], conversation_context: str, confidence_data: Dict[str, Any] = None) -> str:
     """Build comprehensive context prompt for response generation."""
     
     context_parts = []
@@ -118,12 +120,30 @@ Your role:
             cultural_summary = summary.get("cultural_summary", "")
             entity_name = summary.get("entity_name", "Unknown")
             location = summary.get("location", "Unknown location")
+            certainty = summary.get("certainty_score", 0.0)
+            entity_verified = summary.get("entity_verified", False)
+            
+            # Add confidence information
+            confidence_text = _format_confidence_info(certainty, entity_verified)
             
             context_parts.append(f"Image {i}: {entity_name} at {location}")
             context_parts.append(f"Cultural context: {cultural_summary}")
+            context_parts.append(f"Confidence: {confidence_text}")
             context_parts.append("")
     else:
         context_parts.append("\n**No recent image context available.**")
+    
+    # Add overall confidence data if provided
+    if confidence_data:
+        context_parts.append(f"\n**Overall Analysis Confidence:**")
+        overall_certainty = confidence_data.get("certainty", 0.0)
+        entity_verified = confidence_data.get("verified", False)
+        entity_name = confidence_data.get("entity", "Unknown")
+        
+        confidence_text = _format_confidence_info(overall_certainty, entity_verified)
+        context_parts.append(f"Entity: {entity_name}")
+        context_parts.append(f"Confidence: {confidence_text}")
+        context_parts.append("")
     
     # Add conversation context if provided
     if conversation_context:
@@ -140,19 +160,40 @@ Your role:
 - If they're asking about something not in recent images, provide general helpful information
 - Be enthusiastic about cultural and historical topics
 - Use "you" to make it personal and engaging
+- **IMPORTANT: Reflect confidence levels in your responses:**
+  * High confidence (>0.9): Be definitive and enthusiastic ("This is definitely...", "I'm confident this is...")
+  * Medium confidence (0.7-0.9): Be positive but acknowledge uncertainty ("This appears to be...", "I believe this is...")
+  * Low confidence (<0.7): Be cautious and honest ("This might be...", "I'm not entirely certain, but...")
 - If you don't know something specific, acknowledge it and offer general information
 - End responses in a way that invites further conversation
 
-**Example Response Style:**
-"That's a fascinating question! The Eiffel Tower you photographed earlier has such an interesting history - it was actually built as a temporary structure for the 1889 World's Fair. What other aspects of Parisian culture are you curious about?" """)
+**Example Response Styles by Confidence:**
+High confidence: "That's definitely the Eiffel Tower! I'm confident this is the iconic iron lattice tower built in 1889..."
+Medium confidence: "This appears to be the Eiffel Tower! I believe this is the famous Parisian landmark..."
+Low confidence: "This might be the Eiffel Tower, though I'm not entirely certain from this angle. It could be..." """)
     
     return "\n".join(context_parts)
+
+def _format_confidence_info(certainty: float, entity_verified: bool) -> str:
+    """Format confidence information for display."""
+    if entity_verified and certainty >= 0.9:
+        return f"High confidence ({certainty:.1%}) - Entity verified"
+    elif entity_verified and certainty >= 0.7:
+        return f"Medium confidence ({certainty:.1%}) - Entity verified"
+    elif certainty >= 0.7:
+        return f"Medium confidence ({certainty:.1%}) - Entity not fully verified"
+    elif certainty >= 0.5:
+        return f"Low confidence ({certainty:.1%}) - Uncertain identification"
+    else:
+        return f"Very low confidence ({certainty:.1%}) - Unreliable identification"
 
 def generate_image_analysis_response(
     cultural_summary: str,
     entity_name: str = None,
     location: str = None,
-    user_message: str = "Tell me about what I'm seeing"
+    user_message: str = "Tell me about what I'm seeing",
+    certainty: float = 0.0,
+    entity_verified: bool = False
 ) -> Dict[str, Any]:
     """
     Generate a response specifically for image analysis results.
@@ -162,6 +203,8 @@ def generate_image_analysis_response(
         entity_name: Name of the identified entity
         location: Location where image was taken
         user_message: User's question about the image
+        certainty: Confidence level of entity identification
+        entity_verified: Whether the entity was verified
         
     Returns:
         Response focused on the image analysis
@@ -175,17 +218,22 @@ def generate_image_analysis_response(
 - Entity: {entity_name or 'Not identified'}
 - Location: {location or 'Unknown location'}
 - Cultural Summary: {cultural_summary}
+- Confidence Level: {_format_confidence_info(certainty, entity_verified)}
 
 **User's Question:** {user_message}
 
 **Your Task:** Provide an engaging, conversational response that:
 - Shares the most interesting cultural/historical information from the analysis
+- **Reflects the confidence level in your language:**
+  * High confidence (>0.9): Be definitive ("This is definitely...", "I'm confident this is...")
+  * Medium confidence (0.7-0.9): Be positive but acknowledge uncertainty ("This appears to be...", "I believe this is...")
+  * Low confidence (<0.7): Be cautious and honest ("This might be...", "I'm not entirely certain, but...")
 - Answers their specific question if possible
 - Makes them excited about what they're seeing
 - Connects the specific site to broader cultural context
 - Invites them to learn more or ask follow-up questions
 
-**Response Style:** Be enthusiastic, conversational, and educational. Use "you" to make it personal."""
+**Response Style:** Be enthusiastic, conversational, and educational. Use "you" to make it personal. Match your confidence level to the analysis confidence."""
 
         from google.genai import GenerativeModel
         model = GenerativeModel("gemini-2.5-flash")
