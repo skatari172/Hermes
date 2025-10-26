@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator, Linking, NativeModules } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraButton, MicButton, TextInput } from '../components/homecomponents';
 import * as FileSystem from 'expo-file-system';
@@ -10,6 +10,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import apiClient from '../../api/apiClient';
 import { journalAPI } from '../../api/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { PorcupineManager, BuiltInKeywords } from '@picovoice/porcupine-react-native';
+import { VoiceProcessor } from '@picovoice/react-native-voice-processor';
 
 export default function HomeScreen() {
   const [messages, setMessages] = useState<Array<{id: string, text: string, timestamp: Date, isUser: boolean, imageUri?: string}>>([]);
@@ -28,6 +30,17 @@ export default function HomeScreen() {
   
   // TTS speed control
   const [ttsSpeed, setTtsSpeed] = useState(1.5); // Default to 1.5x speed (50% faster)
+
+  // Wake word detection state
+  const [isListeningForWakeWord, setIsListeningForWakeWord] = useState(false);
+  const [wakeWordDetected, setWakeWordDetected] = useState(false);
+  const [wakeWordStatusMessage, setWakeWordStatusMessage] = useState<string | null>(null);
+  const micButtonRef = useRef<any>(null);
+  const porcupineRef = useRef<any>(null);
+
+  // Porcupine access key - Get from https://console.picovoice.ai/
+  // Set EXPO_PUBLIC_PORCUPINE_ACCESS_KEY in your environment or replace the placeholder below
+  const PORCUPINE_ACCESS_KEY = process.env.EXPO_PUBLIC_PORCUPINE_ACCESS_KEY || 'YOUR_ACCESS_KEY_HERE';
 
   // Request location permission and get current location
   useEffect(() => {
@@ -50,6 +63,162 @@ export default function HomeScreen() {
       }
     })();
   }, []);
+
+  // Initialize Porcupine wake word detection
+  useEffect(() => {
+    let porcupineManager: any = null;
+
+    const initPorcupine = async () => {
+      try {
+        console.log('🎯 Initializing Porcupine wake word detection...');
+        setWakeWordStatusMessage(null);
+
+        if (PORCUPINE_ACCESS_KEY === 'YOUR_ACCESS_KEY_HERE' || !process.env.EXPO_PUBLIC_PORCUPINE_ACCESS_KEY) {
+          const message = 'Add a Porcupine Access Key to enable wake word detection.';
+          console.log('⚠️', message);
+          setWakeWordStatusMessage(message);
+          setIsListeningForWakeWord(false);
+          return;
+        }
+
+        if (!NativeModules?.PvPorcupine) {
+          const message = 'Wake word detection needs a custom Expo dev build that bundles the Picovoice native module. Expo Go does not include it by default.';
+          console.log('⚠️', message);
+          setWakeWordStatusMessage(message);
+          setIsListeningForWakeWord(false);
+          return;
+        }
+
+        if (!VoiceProcessor?.instance) {
+          const message = 'VoiceProcessor native module is unavailable. Build a custom dev client to continue.';
+          console.log('⚠️', message);
+          setWakeWordStatusMessage(message);
+          setIsListeningForWakeWord(false);
+          return;
+        }
+
+        if (!PorcupineManager || !PorcupineManager.fromBuiltInKeywords) {
+          const message = 'PorcupineManager API is unavailable. Verify @picovoice/porcupine-react-native is installed and autolinked.';
+          console.error('❌', message);
+          setWakeWordStatusMessage(message);
+          setIsListeningForWakeWord(false);
+          return;
+        }
+
+        const { status } = await Audio.requestPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('❌ Microphone permission denied for wake word detection');
+          Alert.alert(
+            'Microphone Permission Required',
+            'Enable microphone access to use "Hey Hermes" wake word detection',
+            [{ text: 'OK' }]
+          );
+          setWakeWordStatusMessage('Microphone permission denied');
+          return;
+        }
+
+        const detectionCallback = async (keywordIndex: number) => {
+          console.log('✅ Wake word detected! Index:', keywordIndex);
+          await handleWakeWordTriggered();
+        };
+
+        const errorCallback = (error: any) => {
+          console.error('❌ Porcupine error:', error);
+          setWakeWordStatusMessage(error?.message ?? 'Porcupine error occurred');
+        };
+
+        porcupineManager = await PorcupineManager.fromBuiltInKeywords(
+          PORCUPINE_ACCESS_KEY,
+          [BuiltInKeywords.HEY_GOOGLE],
+          detectionCallback,
+          errorCallback
+        );
+        console.log('✅ Using built-in "Hey Google" wake word');
+
+        porcupineRef.current = porcupineManager;
+
+        await porcupineManager.start();
+
+        setIsListeningForWakeWord(true);
+        setWakeWordStatusMessage(null);
+        console.log('👂 Porcupine listening for "Hey Hermes"...');
+
+      } catch (error: any) {
+        console.error('❌ Porcupine initialization error:', error);
+
+        if (error?.message?.includes('AccessKey')) {
+          const message = 'Porcupine Access Key invalid or missing. Update EXPO_PUBLIC_PORCUPINE_ACCESS_KEY and restart.';
+          setWakeWordStatusMessage(message);
+        } else if (error?.message?.includes('Device is not supported') || error?.message?.includes('null is not an object')) {
+          const message = 'This build does not include the Porcupine native module. Create a custom dev client with "npx expo run:ios" or EAS Build.';
+          setWakeWordStatusMessage(message);
+        } else {
+          setWakeWordStatusMessage(error?.message || 'Porcupine initialization failed.');
+        }
+
+        setIsListeningForWakeWord(false);
+      }
+    };
+
+    if (Platform.OS === 'ios') {
+      initPorcupine();
+    } else {
+      const message = 'Wake word detection currently enabled only on iOS builds.';
+      console.log('⚠️', message);
+      setWakeWordStatusMessage(message);
+    }
+
+    return () => {
+      if (porcupineRef.current) {
+        console.log('🛑 Stopping Porcupine...');
+        porcupineRef.current.stop().catch((e: any) => console.error('Stop error:', e));
+        porcupineRef.current.delete().catch((e: any) => console.error('Delete error:', e));
+        porcupineRef.current = null;
+        setIsListeningForWakeWord(false);
+      }
+    };
+  }, [PORCUPINE_ACCESS_KEY]);
+
+  // Handle wake word triggered
+  const handleWakeWordTriggered = async () => {
+    try {
+      console.log('🎯 Wake word triggered - starting voice recording');
+      setWakeWordDetected(true);
+
+      // Provide visual/audio feedback
+      const wakeMessage = {
+        id: Date.now().toString(),
+        text: '👋 Hey! I\'m listening...',
+        timestamp: new Date(),
+        isUser: false
+      };
+      setMessages(prev => [...prev, wakeMessage]);
+
+      // Trigger the MicButton to start recording
+      // Note: You'll need to expose a startRecording method in MicButton component
+      if (micButtonRef.current?.startRecording) {
+        await micButtonRef.current.startRecording();
+      } else {
+        // Fallback: Show alert to tap microphone
+        Alert.alert(
+          '👋 Hey there!',
+          'Hermes is ready to listen. Tap the microphone to start speaking.',
+          [{ text: 'OK' }]
+        );
+      }
+
+      // Reset wake word detected after delay
+      setTimeout(() => {
+        setWakeWordDetected(false);
+      }, 3000);
+
+    } catch (error) {
+      console.error('Error handling wake word trigger:', error);
+      setWakeWordDetected(false);
+    }
+  };
+
+
   const { user } = useAuth();
 
   // Auto-scroll to bottom when new messages are added
@@ -130,7 +299,7 @@ export default function HomeScreen() {
       // Stop any previously playing audio first
       await stopCurrentTts();
 
-      if (!FileSystem || !FileSystem.EncodingType) {
+      if (!FileSystem) {
         // Fallback: use data URL directly
         const dataUrl = `data:audio/mp3;base64,${audioData}`;
         const { sound } = await Audio.Sound.createAsync({ uri: dataUrl }, { shouldPlay: true });
@@ -145,11 +314,11 @@ export default function HomeScreen() {
       }
 
       const fileName = `tts_audio_${Date.now()}.mp3`;
-      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      const fileUri = `file:///tmp/${fileName}`;
       currentSoundFileUriRef.current = fileUri;
 
       await FileSystem.writeAsStringAsync(fileUri, audioData, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64' as any,
       });
 
       const { sound } = await Audio.Sound.createAsync({ uri: fileUri }, { shouldPlay: true });
@@ -603,7 +772,38 @@ export default function HomeScreen() {
           <Text style={styles.hermesTitleAbsolute}>Hermes</Text>
 
           <View style={styles.headerRightContainer}>
-            {/* TTS moved to the right where the ellipsis used to be */}
+            {/* Wake word indicator */}
+            {Platform.OS === 'ios' && (
+              wakeWordStatusMessage ? (
+                <TouchableOpacity
+                  style={styles.wakeWordErrorIndicator}
+                  onPress={() =>
+                    Alert.alert(
+                      'Wake Word Disabled',
+                      wakeWordStatusMessage,
+                      [{ text: 'Got it' }]
+                    )
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Wake word unavailable"
+                >
+                  <Ionicons name="alert-circle-outline" size={16} color="#F87171" />
+                  <Text style={styles.wakeWordErrorText}>Wake word off</Text>
+                </TouchableOpacity>
+              ) : (
+                isListeningForWakeWord && (
+                  <View style={styles.wakeWordIndicator}>
+                    <View style={[styles.pulseIndicator, wakeWordDetected && styles.pulseActive]} />
+                    <Ionicons name="mic-outline" size={14} color={wakeWordDetected ? '#10B981' : '#01AFD1'} />
+                    <Text style={[styles.wakeWordText, wakeWordDetected && styles.wakeWordTextActive]}>
+                      {wakeWordDetected ? 'Listening...' : 'Hey Google'}
+                    </Text>
+                  </View>
+                )
+              )
+            )}
+            
+            {/* TTS Toggle */}
             <TouchableOpacity
               style={[styles.ttsToggle, ttsEnabled && styles.ttsToggleActive]}
               onPress={() => setTtsEnabled(!ttsEnabled)}
@@ -700,6 +900,7 @@ export default function HomeScreen() {
           maxLength={500}
         />
         <MicButton 
+          ref={micButtonRef}
           onAudioRecorded={handleAudioRecorded} 
           onTranscriptionComplete={handleTranscriptionComplete}
         />
@@ -897,5 +1098,49 @@ const styles = StyleSheet.create({
   loadingMessage: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+  },
+  wakeWordIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E5ECFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  wakeWordErrorIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  wakeWordText: {
+    color: '#01AFD1',
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  wakeWordErrorText: {
+    color: '#B91C1C',
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+    maxWidth: 150,
+  },
+  wakeWordTextActive: {
+    color: '#10B981',
+  },
+  pulseIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#01AFD1',
+    marginRight: 6,
+  },
+  pulseActive: {
+    backgroundColor: '#10B981',
   },
 });

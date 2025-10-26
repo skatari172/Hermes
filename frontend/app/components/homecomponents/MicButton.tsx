@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -10,10 +10,22 @@ interface MicButtonProps {
   onTranscriptionComplete: (text: string) => void;
 }
 
-export default function MicButton({ onAudioRecorded, onTranscriptionComplete }: MicButtonProps) {
+export interface MicButtonRef {
+  startRecording: () => Promise<void>;
+  stopRecording: () => Promise<void>;
+}
+
+const MicButton = forwardRef<MicButtonRef, MicButtonProps>(
+  ({ onAudioRecorded, onTranscriptionComplete }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Expose methods to parent via ref
+  useImperativeHandle(ref, () => ({
+    startRecording,
+    stopRecording,
+  }));
 
   const transcribeAudio = async (audioUri: string) => {
     try {
@@ -156,7 +168,9 @@ export default function MicButton({ onAudioRecorded, onTranscriptionComplete }: 
       />
     </TouchableOpacity>
   );
-}
+});
+
+export default MicButton;
 
 const styles = StyleSheet.create({
   micButton: {
