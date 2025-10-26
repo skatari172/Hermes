@@ -30,7 +30,7 @@ const resolveBaseUrl = () => {
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: resolveBaseUrl(),
-  timeout: 30000,
+  timeout: 120000, // 2 minutes for image processing and LLM responses
   headers: {
     'Content-Type': 'application/json',
   },
