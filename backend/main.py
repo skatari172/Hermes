@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, Header, Request
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from routes import journal_routes
@@ -8,10 +8,6 @@ from routes import chat_routes
 import uvicorn
 import base64
 import asyncio
-from PIL import Image
-from PIL.ExifTags import TAGS
-# from agents.geo_agent import router as geo_router
-# from agents.context_agent import router as wiki_router
 import os
 import json
 from datetime import datetime
@@ -57,7 +53,9 @@ async def process_image(
     image_file: UploadFile = File(...),
     user_id: str = Form(default="demo_user"),
     session_id: str = Form(default="demo_session"),
-    entity_name: str = Form(default=None)
+    entity_name: str = Form(default=None),
+    user_latitude: str = Form(default=None),
+    user_longitude: str = Form(default=None)
 ):
     """Process image through the complete agent pipeline."""
     try:
@@ -75,29 +73,38 @@ async def process_image(
         image_base64 = base64.b64encode(image_content).decode('utf-8')
         
         # Extract GPS coordinates from image automatically using location API fallback
+        # Priority: 1. User's current location (from frontend), 2. Image EXIF, 3. Location API
         from utils.location_api_standalone import process_image_location_with_api
         
-        print("📍 Processing image location with API fallback...")
-        geo_result = process_image_location_with_api(image_base64, "base64")
-        
-        if geo_result["success"]:
-            lat = geo_result["coordinates"]["lat"]
-            lng = geo_result["coordinates"]["lng"]
-            method = geo_result.get("method", "unknown")
-            print(f"✅ Location determined ({method}): {lat}, {lng}")
-            
-            if method == "location_api":
-                api_data = geo_result.get('location_api', {})
-                print(f"🌐 Location: {api_data.get('location', 'Unknown')}")
+        # Use user's current location if provided
+        if user_latitude and user_longitude:
+            lat = float(user_latitude)
+            lng = float(user_longitude)
+            method = "user_location"
+            print(f"📍 Using user's current location: {lat}, {lng}")
+            geo_result = {"success": True, "method": "user_location"}
         else:
-            # Handle case where location cannot be determined
-            print(f"❌ Could not determine location: {geo_result['error']}")
-            return {
-                "status": "error",
-                "message": f"Could not determine location: {geo_result['error']}",
-                "error_type": "location_detection_failed",
-                "suggestion": "Check your internet connection or try using a photo with GPS metadata"
-            }
+            print("📍 Processing image location with API fallback...")
+            geo_result = process_image_location_with_api(image_base64, "base64")
+            
+            if geo_result["success"]:
+                lat = geo_result["coordinates"]["lat"]
+                lng = geo_result["coordinates"]["lng"]
+                method = geo_result.get("method", "unknown")
+                print(f"✅ Location determined ({method}): {lat}, {lng}")
+                
+                if method == "location_api":
+                    api_data = geo_result.get('location_api', {})
+                    print(f"🌐 Location: {api_data.get('location', 'Unknown')}")
+            else:
+                # Handle case where location cannot be determined
+                print(f"❌ Could not determine location: {geo_result['error']}")
+                return {
+                    "status": "error",
+                    "message": f"Could not determine location: {geo_result['error']}",
+                    "error_type": "location_detection_failed",
+                    "suggestion": "Check your internet connection or try using a photo with GPS metadata"
+                }
         
         # Import agents (using standalone versions to avoid ADK issues)
         print("🤖 Starting complete agent pipeline...")
@@ -109,7 +116,7 @@ async def process_image(
         
         # Step 2: Geo Agent - Get location context
         print("🗺️ Step 2: Getting location context...")
-        from agents.geo_agent import get_location_context
+        from utils.geo_utils import get_location_context
         geo_context = get_location_context(lat, lng)
         
         # Step 3: Context Agent - Build comprehensive context
