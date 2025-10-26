@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraButton, MicButton, TextInput } from '../components/homecomponents';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
 import apiClient from '../../api/apiClient';
 import { journalAPI } from '../../api/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,6 +18,10 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  
+  // Auto-camera state
+  const [cameraShownForCurrentFocus, setCameraShownForCurrentFocus] = useState(false);
+  const [cameraPermissionStatus, setCameraPermissionStatus] = useState<ImagePicker.PermissionStatus | null>(null);
 
   // Request location permission and get current location
   useEffect(() => {
@@ -49,6 +55,36 @@ export default function HomeScreen() {
     }
   }, [messages]);
 
+  // Check camera permission on mount
+  useEffect(() => {
+    (async () => {
+      const { status } = await ImagePicker.getCameraPermissionsAsync();
+      setCameraPermissionStatus(status);
+    })();
+  }, []);
+
+  // Auto-camera logic when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      // Reset camera shown flag when screen is focused
+      setCameraShownForCurrentFocus(false);
+      
+      // Use a timeout to ensure the state update has been processed
+      const timer = setTimeout(() => {
+        // Check if we should show camera automatically
+        const shouldShowCamera = 
+          messages.length === 0 && 
+          !inputText.trim();
+        
+        if (shouldShowCamera) {
+          handleAutoCamera();
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }, [messages.length, inputText])
+  );
+
 
   // Helper function to check if timestamp should be shown
   const shouldShowTimestamp = (currentIndex: number) => {
@@ -63,6 +99,69 @@ export default function HomeScreen() {
     
     return currentTime.getMinutes() !== previousTime.getMinutes() || 
            currentTime.getHours() !== previousTime.getHours();
+  };
+
+  // Auto-camera handler
+  const handleAutoCamera = async () => {
+    // Mark that we've shown the camera for this focus to prevent re-triggering
+    setCameraShownForCurrentFocus(true);
+    
+    // Check current permission status
+    const { status } = await ImagePicker.getCameraPermissionsAsync();
+    setCameraPermissionStatus(status);
+    
+    if (status === 'granted') {
+      // Permission granted, launch camera directly
+      launchCamera();
+    } else if (status === 'undetermined') {
+      // Request permission
+      const { status: newStatus } = await ImagePicker.requestCameraPermissionsAsync();
+      setCameraPermissionStatus(newStatus);
+      
+      if (newStatus === 'granted') {
+        launchCamera();
+      } else {
+        // Permission denied, show alert
+        Alert.alert(
+          'Camera Permission Required',
+          'Camera permission is needed to take photos. Please grant permission to use this feature.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() }
+          ]
+        );
+      }
+    } else {
+      // Permission permanently denied, show settings alert
+      Alert.alert(
+        'Camera Permission Denied',
+        'Camera permission has been permanently denied. Please enable it in Settings to use this feature.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() }
+        ]
+      );
+    }
+  };
+
+  // Launch camera function
+  const launchCamera = async () => {
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const source = result.assets[0].uri;
+        console.log('Auto-camera image captured:', source);
+        handleImageCaptured(source);
+      }
+    } catch (error) {
+      console.error('Auto-camera error:', error);
+    }
   };
 
   const handleGenerateJournal = async () => {
