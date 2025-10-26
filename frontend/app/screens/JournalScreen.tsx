@@ -252,21 +252,20 @@ export default function JournalScreen() {
     });
 
     const handleConversationPress = (conversation: ConversationEntry) => {
-      if (conversation.latitude && conversation.longitude) {
-        const conversationLocation: ConversationLocation = {
-          id: `${item.date}_${conversation.timestamp}`,
-          latitude: conversation.latitude,
-          longitude: conversation.longitude,
-          location_name: conversation.location_name || 'Unknown Location',
-          message: conversation.message,
-          response: conversation.response,
-          photo_url: conversation.photo_url,
-          timestamp: conversation.timestamp,
-          date: item.date
-        };
-        setSelectedConversation(conversationLocation);
-        setShowConversationModal(true);
-      }
+      // Always open modal, even without location data
+      const conversationLocation: ConversationLocation = {
+        id: `${item.date}_${conversation.timestamp}`,
+        latitude: conversation.latitude || 0,
+        longitude: conversation.longitude || 0,
+        location_name: conversation.location_name || 'Journal Entry',
+        message: conversation.message,
+        response: conversation.response,
+        photo_url: conversation.photo_url,
+        timestamp: conversation.timestamp,
+        date: item.date
+      };
+      setSelectedConversation(conversationLocation);
+      setShowConversationModal(true);
     };
 
     return (
@@ -488,7 +487,7 @@ export default function JournalScreen() {
                     </View>
                     <View style={journalStyles.pinDetailHeaderText}>
                       <Text style={journalStyles.pinDetailTitle}>
-                        {selectedConversation.location_name}
+                        {selectedConversation.location_name || 'Journal Entry'}
                       </Text>
                       <Text style={journalStyles.pinDetailTime}>
                         {formatRelativeTime(selectedConversation.timestamp)}
@@ -537,9 +536,9 @@ export default function JournalScreen() {
                                   {new Date(conversation.timestamp).toLocaleTimeString()}
                                 </Text>
                               </View>
-                              <Text style={journalStyles.pinDetailLabel}>Your Message</Text>
+                              <Text style={journalStyles.pinDetailLabel}>Title</Text>
                               <Text style={styles.conversationMessage}>{conversation.message}</Text>
-                              <Text style={journalStyles.pinDetailLabel}>Hermes Response</Text>
+                              <Text style={journalStyles.pinDetailLabel}>Diary Entry</Text>
                               <Text style={styles.conversationResponse}>{conversation.response}</Text>
                             </View>
                           ))}
@@ -548,12 +547,12 @@ export default function JournalScreen() {
                     ) : (
                       // Single conversation
                       <>
-                        <Text style={journalStyles.pinDetailLabel}>Your Message</Text>
+                        <Text style={journalStyles.pinDetailLabel}>Title</Text>
                         <Text style={journalStyles.pinDetailDescription}>
                           {selectedConversation.message}
                         </Text>
 
-                        <Text style={journalStyles.pinDetailLabel}>Hermes Response</Text>
+                        <Text style={journalStyles.pinDetailLabel}>Diary Entry</Text>
                         <Text style={journalStyles.pinDetailDescription}>
                           {selectedConversation.response}
                         </Text>
@@ -562,29 +561,31 @@ export default function JournalScreen() {
                   </View>
                 </ScrollView>
 
-                {/* Fixed Bottom Button */}
-                <View style={journalStyles.pinDetailBottomSection}>
-                  {location && (
-                    <Text style={journalStyles.pinDetailDistanceButton}>
-                      {calculateDistance(location, selectedConversation.latitude, selectedConversation.longitude)} away
-                    </Text>
-                  )}
-                  <TouchableOpacity 
-                    style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#007AFF' }]}
-                    onPress={async () => {
-                      const success = await handleNavigateToPin(
-                        location, 
-                        selectedConversation.latitude, 
-                        selectedConversation.longitude
-                      );
-                      if (success) {
-                        setShowConversationModal(false);
-                      }
-                    }}
-                  >
-                    <Text style={journalStyles.pinDetailDirectionsButtonText}>Get Directions</Text>
-                  </TouchableOpacity>
-                </View>
+                {/* Fixed Bottom Button - only show if there's a location */}
+                {selectedConversation.latitude && selectedConversation.longitude ? (
+                  <View style={journalStyles.pinDetailBottomSection}>
+                    {location && (
+                      <Text style={journalStyles.pinDetailDistanceButton}>
+                        {calculateDistance(location, selectedConversation.latitude, selectedConversation.longitude)} away
+                      </Text>
+                    )}
+                    <TouchableOpacity 
+                      style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#007AFF' }]}
+                      onPress={async () => {
+                        const success = await handleNavigateToPin(
+                          location, 
+                          selectedConversation.latitude, 
+                          selectedConversation.longitude
+                        );
+                        if (success) {
+                          setShowConversationModal(false);
+                        }
+                      }}
+                    >
+                      <Text style={journalStyles.pinDetailDirectionsButtonText}>Get Directions</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </View>
             )}
           </Animated.View>
