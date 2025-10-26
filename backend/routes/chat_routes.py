@@ -1,5 +1,6 @@
 # backend/routes/chat_routes.py
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends
+from utils.auth_util import verify_firebase_token
 from datetime import datetime
 import json
 import asyncio
@@ -17,7 +18,7 @@ chat_sessions = {}
 @router.post("/")
 async def chat_with_context(
     user_message: str = Form(...),
-    user_id: str = Form(default="demo_user"),
+    user_id: str = Depends(verify_firebase_token),
     session_id: str = Form(default="demo_session")
 ):
     """Handle chat messages with conversation context and in-memory session storage."""

@@ -41,7 +41,6 @@ export default function MicButton({ onAudioRecorded, onTranscriptionComplete }: 
         type: mimeType,
         name: fileName,
       } as any);
-      formData.append('user_id', 'demo_user');
       formData.append('session_id', 'demo_session');
 
       // Send to backend transcription endpoint via apiClient

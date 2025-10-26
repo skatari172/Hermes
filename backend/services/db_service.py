@@ -51,7 +51,8 @@ def save_conversation_entry(uid: str, entry: dict):
     entry_date = datetime.fromisoformat(entry["timestamp"]).date().isoformat()
     print(f"📅 Entry date: {entry_date}")
     
-    doc_ref = db.collection("conversations").document(uid)
+    # Store conversations inside the `journal` collection to consolidate chat + journal data
+    doc_ref = db.collection("journal").document(uid)
     
     # Get existing document
     doc = doc_ref.get()
@@ -83,9 +84,10 @@ def save_conversation_entry(uid: str, entry: dict):
 
 def get_daily_conversations(uid: str, date_filter: Optional[str] = None) -> Dict:
     """
-    Get conversations organized by date.
+    Get conversations organized by date. Reads from the `journal` collection where
+    conversations are now stored (date-keyed). Returns the same structure as before.
     """
-    doc_ref = db.collection("conversations").document(uid)
+    doc_ref = db.collection("journal").document(uid)
     doc = doc_ref.get()
     
     if not doc.exists:
@@ -109,7 +111,9 @@ def get_conversation_locations(uid: str) -> List[Dict]:
     Get daily conversation locations for map display.
     Returns one location per day with all conversations for that day grouped together.
     """
-    doc_ref = db.collection("conversations").document(uid)
+    # Conversation locations are derived from the date-keyed conversation structure
+    # stored under the `journal` collection for each user.
+    doc_ref = db.collection("journal").document(uid)
     doc = doc_ref.get()
     
     if not doc.exists:
