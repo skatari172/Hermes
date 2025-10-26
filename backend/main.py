@@ -4,18 +4,21 @@ from fastapi.staticfiles import StaticFiles
 from routes import journal_routes
 from services.firebase_client import initialize_firebase  # Initialize Firebase first
 from routes import user_routes
-from config.logger import get_logger
+from routes import chat_routes
 import uvicorn
-import os
+import base64
+import asyncio
+from PIL import Image
+from PIL.ExifTags import TAGS
 # from agents.geo_agent import router as geo_router
 # from agents.context_agent import router as wiki_router
 import os
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
-
-logger = get_logger(__name__)
 
 app = FastAPI(title="Hermes API", description="Personal AI Assistant API")
 
@@ -36,6 +39,7 @@ app.add_middleware(
 # Register routers
 app.include_router(user_routes.router)
 app.include_router(journal_routes.router)
+app.include_router(chat_routes.router)
 # app.include_router(geo_router)
 # app.include_router(wiki_router)
 
@@ -46,6 +50,173 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "message": "API is running"}
+
+
+@app.post("/api/image/process")
+async def process_image(
+    image_file: UploadFile = File(...),
+    user_id: str = Form(default="demo_user"),
+    session_id: str = Form(default="demo_session"),
+    entity_name: str = Form(default=None)
+):
+    """Process image through the complete agent pipeline."""
+    try:
+        # Read the image file
+        image_content = await image_file.read()
+        
+        # Check if file is empty
+        if len(image_content) == 0:
+            return {
+                "status": "error",
+                "message": "Empty image file"
+            }
+        
+        # Convert to base64
+        image_base64 = base64.b64encode(image_content).decode('utf-8')
+        
+        # Extract GPS coordinates from image automatically using location API fallback
+        from utils.location_api_standalone import process_image_location_with_api
+        
+        print("📍 Processing image location with API fallback...")
+        geo_result = process_image_location_with_api(image_base64, "base64")
+        
+        if geo_result["success"]:
+            lat = geo_result["coordinates"]["lat"]
+            lng = geo_result["coordinates"]["lng"]
+            method = geo_result.get("method", "unknown")
+            print(f"✅ Location determined ({method}): {lat}, {lng}")
+            
+            if method == "location_api":
+                api_data = geo_result.get('location_api', {})
+                print(f"🌐 Location: {api_data.get('location', 'Unknown')}")
+        else:
+            # Handle case where location cannot be determined
+            print(f"❌ Could not determine location: {geo_result['error']}")
+            return {
+                "status": "error",
+                "message": f"Could not determine location: {geo_result['error']}",
+                "error_type": "location_detection_failed",
+                "suggestion": "Check your internet connection or try using a photo with GPS metadata"
+            }
+        
+        # Import agents (using standalone versions to avoid ADK issues)
+        print("🤖 Starting complete agent pipeline...")
+        
+        # Step 1: Perception Agent (with translation priority)
+        print("📸 Step 1: Analyzing image with OCR and translation...")
+        from utils.perception_utils import analyze_image_with_translation
+        perception_result = await analyze_image_with_translation(image_base64, "base64")
+        
+        # Step 2: Geo Agent - Get location context
+        print("🗺️ Step 2: Getting location context...")
+        from agents.geo_agent import get_location_context
+        geo_context = get_location_context(lat, lng)
+        
+        # Step 3: Context Agent - Build comprehensive context
+        print("🧠 Step 3: Building context and verifying entity...")
+        from utils.context_utils import build_comprehensive_context
+        context_result = build_comprehensive_context(
+            lat=lat,
+            lng=lng,
+            perception_clues=perception_result,
+            geo_context=geo_context,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        # Step 4: Store cultural summary in database
+        print("💾 Step 4: Storing cultural summary in database...")
+        from utils.storage_utils import store_cultural_summary
+        db_result = await store_cultural_summary(context_result, user_id, session_id)
+        
+        # Step 4.5: Create journal entry after context agent completes
+        print("📖 Step 4.5: Creating journal entry...")
+        from utils.storage_utils import create_journal_entry
+        journal_result = await create_journal_entry(context_result, user_id, session_id)
+        
+        # Step 5: Response Agent - Generate cultural response
+        print("💬 Step 5: Generating cultural response...")
+        from utils.response_utils import generate_cultural_response_with_context
+        response_result = await generate_cultural_response_with_context(
+            user_message="Tell me about what I'm seeing in this photo",
+            context_data=context_result,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        # Step 6: Store context in chat session for follow-ups
+        print("💾 Step 6: Storing context in chat session...")
+        from routes.chat_routes import chat_sessions
+        
+        session_key = f"{user_id}_{session_id}"
+        if session_key not in chat_sessions:
+            chat_sessions[session_key] = {
+                "user_id": user_id,
+                "session_id": session_id,
+                "conversation_history": [],
+                "context_data": None,
+                "created_at": datetime.utcnow().isoformat(),
+                "last_activity": datetime.utcnow().isoformat()
+            }
+        
+        # Store the context data in the session
+        chat_sessions[session_key]["context_data"] = context_result
+        chat_sessions[session_key]["last_activity"] = datetime.utcnow().isoformat()
+        
+        print(f"✅ Context stored in chat session: {session_key}")
+        
+        return {
+            "status": "success",
+            "message": "Image processed successfully",
+            "data": {
+                "coordinates": {"lat": lat, "lng": lng},
+                "location_method": geo_result.get("method", "unknown"),
+                "perception": {
+                    "scene_summary": perception_result.get('scene_summary', ''),
+                    "translated_text": perception_result.get('translated_text', []),
+                    "cultural_landmarks": perception_result.get('cultural_landmarks', []),
+                    "architectural_style": perception_result.get('architectural_style', ''),
+                    "cultural_elements": perception_result.get('cultural_elements', []),
+                    "atmosphere": perception_result.get('atmosphere', ''),
+                    "cultural_notes": perception_result.get('cultural_notes', [])
+                },
+                "geo": geo_context,
+                "context": {
+                    "entity_verified": context_result.get('verified', False),
+                    "entity_name": context_result.get('entity', 'Unknown'),
+                    "entity_type": context_result.get('entity_type', 'unknown'),
+                    "certainty": context_result.get('certainty', 0.0),
+                    "cultural_summary": context_result.get('cultural_summary', '')
+                },
+                "response": {
+                    "text": response_result.get('response', ''),
+                    "user_message": response_result.get('user_message', ''),
+                    "context_used": response_result.get('context_used', {}),
+                    "metadata": response_result.get('metadata', {})
+                },
+                "database": {
+                    "stored": db_result.get('success', False),
+                    "message": db_result.get('message', '')
+                },
+                "journal": {
+                    "created": journal_result.get('success', False),
+                    "message": journal_result.get('message', ''),
+                    "journal_data": journal_result.get('journal_data', {})
+                },
+                "session": {
+                    "stored": True,
+                    "session_key": session_key,
+                    "has_context": True
+                }
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Image processing error: {e}")
+        return {
+            "status": "error",
+            "message": f"Image processing failed: {str(e)}"
+        }
 
 @app.post("/api/voice/transcribe")
 async def transcribe_audio(
@@ -149,227 +320,6 @@ async def transcribe_audio(
             "transcribed_text": ""
         }
 
-@app.post("/api/upload/image")
-async def upload_image(
-    request: Request,
-    image: UploadFile = File(...),
-    user_id: str = Form(...),
-    session_id: str = Form(default="demo_session"),
-    message: str = Form(default="What do you see in this image?")
-):
-    """
-    Upload an image, analyze it with perception agent, and trigger conversation.
-    This is the main endpoint for image-based conversations.
-    """
-    try:
-        from utils.storage_client import storage_client
-        from agents.perception_agent import analyze_image_perception
-        from agents.conversation_agent import conversation_agent
-        from routes.journal_routes import get_user_id
-        import base64
-        
-        # Validate file type
-        if not image.content_type.startswith("image/"):
-            return {
-                "status": "error",
-                "message": "Invalid file type. Please upload an image file."
-            }
-        
-        # Read image data
-        image_data = await image.read()
-        if len(image_data) == 0:
-            return {
-                "status": "error", 
-                "message": "Empty image file"
-            }
-        
-        logger.info(f"📸 Processing image upload: {image.filename}, size: {len(image_data)} bytes")
-        
-        # Upload to blob storage
-        photo_url = await storage_client.upload_image(
-            image_data=image_data,
-            user_id=user_id,
-            content_type=image.content_type
-        )
-        
-        if not photo_url:
-            return {
-                "status": "error",
-                "message": "Failed to upload image to storage"
-            }
-        
-        logger.info(f"✅ Image uploaded to storage: {photo_url}")
-        # Normalize local URLs so mobile clients can reach the server-hosted file
-        try:
-            from urllib.parse import urlparse, urljoin
-            parsed = urlparse(photo_url)
-            if parsed.hostname in ('localhost', '127.0.0.1'):
-                base = str(request.base_url)
-                photo_url = urljoin(base, parsed.path.lstrip('/'))
-                logger.info(f"🔁 Normalized photo_url for client reachability: {photo_url}")
-        except Exception:
-            logger.warning("Could not normalize photo_url; leaving as-is")
-        
-        # Analyze image with perception agent
-        base64_image = base64.b64encode(image_data).decode('utf-8')
-        perception_result = analyze_image_perception(base64_image, "base64")
-        
-        if "error" in perception_result:
-            logger.error(f"❌ Perception analysis failed: {perception_result['error']}")
-        else:
-            logger.info(f"✅ Image analysis completed: {perception_result.get('scene_summary', 'No summary')[:100]}...")
-        
-        # Add photo URL to perception context
-        perception_result["image_url"] = photo_url
-        perception_result["photo_url"] = photo_url
-        
-        logger.info(f"🔍 Perception result with URLs: image_url={perception_result.get('image_url')}, photo_url={perception_result.get('photo_url')}")
-        
-        # Update conversation agent with scene context
-        await conversation_agent._handle_scene_analysis({
-            "analysis": perception_result,
-            "image_url": photo_url,
-            "photo_url": photo_url
-        })
-        
-        logger.info(f"✅ Scene context set in conversation agent with photo URLs")
-        
-        # Simulate getting location context (you might want to get this from the frontend)
-        # For now, we'll process without geo context or let the conversation agent handle it
-        
-        # Process the message with the conversation agent
-        conversation_result = await conversation_agent.process_message(
-            user_message=message,
-            user_id=user_id,
-            session_id=session_id
-        )
-        
-        return {
-            "status": "success",
-            "photo_url": photo_url,
-            "perception_analysis": perception_result,
-            "conversation_response": conversation_result["response"],
-            "tts_audio_data": conversation_result.get("tts_audio_data"),
-            "context_used": conversation_result.get("context_used", {}),
-            "timestamp": conversation_result.get("timestamp"),
-            "message": "Image uploaded and analyzed successfully"
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Image upload failed: {str(e)}")
-        import traceback
-        logger.error(f"Upload error traceback: {traceback.format_exc()}")
-        return {
-            "status": "error",
-            "message": f"Image upload failed: {str(e)}",
-            "photo_url": None
-        }
-
-@app.post("/api/chat")
-async def chat_with_hermes(
-    message: str = Form(...),
-    session_id: str = Form(default="default_session"),
-    latitude: float = Form(None),
-    longitude: float = Form(None),
-    authorization: str = Header(None)
-):
-    """Chat with Hermes AI - processes message and returns response with optional TTS"""
-    try:
-        from agents.conversation_agent import conversation_agent
-        from routes.journal_routes import get_user_id
-        
-        print(f"🔍 Chat endpoint called with authorization header: {authorization[:50] if authorization else 'None'}...")
-        
-        # Get the real user ID from the authorization header
-        user_id = get_user_id(authorization)
-        
-        print(f"🔍 Chat request from user: {user_id}")
-        print(f"📝 Message: {message}")
-        print(f"🆔 Session ID: {session_id}")
-        print(f"📍 Location: {latitude}, {longitude}" if latitude and longitude else "📍 No location provided")
-        
-        # Process message through conversation agent
-        result = await conversation_agent.process_message(
-            user_message=message,
-            user_id=user_id,
-            session_id=session_id
-        )
-        
-        # Save the conversation to the database (always save all conversations)
-        try:
-            from services.db_service import save_conversation_entry
-            from datetime import datetime
-            
-            conversation_entry = {
-                "message": message,
-                "response": result["response"],
-                "timestamp": datetime.utcnow().isoformat(),
-                "latitude": latitude,
-                "longitude": longitude,
-                "location_name": "Chat Location",
-                "photo_url": None,  # Will be filled if image was uploaded
-                "session_id": session_id
-            }
-            
-            # Get location name if coordinates are provided
-            if latitude and longitude:
-                try:
-                    from utils.maps_client import get_location_context
-                    location_context = get_location_context(latitude, longitude)
-                    conversation_entry["location_name"] = location_context.get("location_name", "Unknown Location")
-                    print(f"🌍 Location resolved: {conversation_entry['location_name']}")
-                except Exception as loc_error:
-                    print(f"⚠️ Could not resolve location: {str(loc_error)}")
-                    conversation_entry["location_name"] = f"Location ({latitude:.4f}, {longitude:.4f})"
-            
-            # Add location data if available from conversation agent
-            if hasattr(conversation_agent, 'current_geo_context') and conversation_agent.current_geo_context:
-                conversation_entry["latitude"] = conversation_agent.current_geo_context.get("latitude")
-                conversation_entry["longitude"] = conversation_agent.current_geo_context.get("longitude")
-                conversation_entry["location_name"] = conversation_agent.current_geo_context.get("location_name", "Chat Location")
-                print(f"🌍 Added geo context: {conversation_entry['location_name']}")
-            
-            # Add photo URL if available from scene context
-            if hasattr(conversation_agent, 'current_scene_context') and conversation_agent.current_scene_context:
-                conversation_entry["photo_url"] = (
-                    conversation_agent.current_scene_context.get("photo_url") or 
-                    conversation_agent.current_scene_context.get("image_url")
-                )
-                print(f"📸 Added photo URL: {conversation_entry['photo_url']}")
-            
-            print(f"💾 Saving conversation entry for user {user_id}: {conversation_entry}")
-            save_conversation_entry(user_id, conversation_entry)
-            print(f"✅ Successfully saved conversation for user {user_id}")
-            
-        except Exception as save_error:
-            print(f"❌ Failed to save conversation: {str(save_error)}")
-            import traceback
-            print(f"❌ Save error traceback: {traceback.format_exc()}")
-        
-        response_data = {
-            "status": "success",
-            "response": result["response"],
-            "tts_audio_data": result.get("tts_audio_data"),
-            "context_used": result.get("context_used", {}),
-            "timestamp": result.get("timestamp"),
-            "user_id": user_id,
-            "session_id": session_id
-        }
-        
-        # Debug logging
-        print(f"🔍 Chat Debug: Response length: {len(result['response'])}")
-        print(f"🔍 Chat Debug: TTS audio data exists: {result.get('tts_audio_data') is not None}")
-        if result.get("tts_audio_data"):
-            print(f"🔍 Chat Debug: TTS audio data length: {len(result['tts_audio_data'])}")
-        
-        return response_data
-        
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Chat processing failed: {str(e)}",
-            "response": "I apologize, but I'm having trouble processing your message right now. Please try again."
-        }
 
 @app.post("/api/voice/speak")
 async def text_to_speech(
@@ -418,24 +368,6 @@ async def text_to_speech(
             "message": f"TTS generation failed: {str(e)}",
             "audio_data": None
         }
-@app.post("/api/voice/chat")
-async def voice_chat(user_id: str, session_id: str, message: str):
-    """Placeholder chat endpoint"""
-    return {
-        "status": "success",
-        "response": "This is a placeholder response. Connect to your LLM here.",
-        "session_id": session_id
-    }
-
-@app.post("/api/voice/speak")
-async def text_to_speech(user_id: str, session_id: str, text: str):
-    """ElevenLabs TTS endpoint"""
-    return {
-        "status": "success",
-        "audio_url": "https://example.com/audio.mp3",
-        "message": "Text-to-speech conversion"
-    }
-
 
 
 if __name__ == "__main__":

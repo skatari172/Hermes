@@ -18,7 +18,8 @@ def process_user_message(
     user_id: str,
     session_id: str,
     conversation_context: str = "",
-    include_image_context: bool = True
+    include_image_context: bool = True,
+    confidence_data: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Process user message and generate appropriate response using response agent.
@@ -29,6 +30,7 @@ def process_user_message(
         session_id: Session identifier
         conversation_context: Previous conversation context
         include_image_context: Whether to include image summaries in response
+        confidence_data: Confidence ratings and verification data
         
     Returns:
         Response with text and metadata
@@ -62,7 +64,8 @@ def process_user_message(
                 "user_id": user_id,
                 "session_id": session_id,
                 "image_summaries": image_summaries,
-                "conversation_context": conversation_context
+                "conversation_context": conversation_context,
+                "confidence_data": confidence_data
             }
         )
         

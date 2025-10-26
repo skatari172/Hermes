@@ -76,8 +76,9 @@ class StorageClient:
             with open(file_path, 'wb') as f:
                 f.write(image_data)
 
-            # Return local URL (assuming backend serves static files)
-            local_url = f"http://localhost:8000/uploads/{user_id}/{filename}"
+            # Return relative local path (no hostname) so caller can normalize to requester base
+            # e.g. 'uploads/{user_id}/{filename}'
+            local_url = f"uploads/{user_id}/{filename}"
             logger.info(f"💾 Image saved locally: {file_path}")
             return local_url
             
@@ -327,7 +328,8 @@ class StorageClient:
             with open(file_path, 'wb') as f:
                 f.write(image_data)
 
-            local_url = f"http://localhost:8000/uploads/profile/{filename}"
+            # Return relative path; the route will normalize to request base
+            local_url = f"uploads/profile/{filename}"
             logger.info(f"💾 Profile image saved locally: {file_path}")
             return local_url
         except Exception as e:

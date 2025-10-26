@@ -79,11 +79,14 @@ def analyze_image_perception(image_data: str, image_format: str = "base64") -> D
        - Identify the language of each detected text
        - Translate non-English text to English
        - If text is already in English, set translation to the same text
+       - Include confidence level for each translation
     3. **Cultural or Historical Cues**: Describe cultural, artistic, or architectural styles neutrally.
     4. **Environmental Context**: Note time of day, weather, and scene characteristics.
 
     IMPORTANT: For foreign text translation:
     - Always provide both original text and English translation
+    - Include context about what the text appears to be (sign, menu, street name, etc.)
+    - If you're unsure about translation accuracy, note it in the confidence field
 
     Respond in this exact JSON format:
     {
@@ -95,7 +98,9 @@ def analyze_image_perception(image_data: str, image_format: str = "base64") -> D
             {
                 "detected_text": "...",
                 "language": "...",
-                "translation": "..."
+                "translation": "...",
+                "confidence": 0.95,
+                "context": "street sign/menu/building name/etc"
             }
         ],
         "cultural_notes": ["..."],
@@ -169,16 +174,21 @@ def extract_translations_for_user(perception_result: Dict[str, Any]) -> Dict[str
             detected_text = text_item.get("detected_text", "")
             language = text_item.get("language", "unknown")
             translation = text_item.get("translation", "")
+            context = text_item.get("context", "text")
+            confidence = text_item.get("confidence", 0.0)
             
             if language.lower() != "english" and translation:
                 foreign_texts.append({
                     "original": detected_text,
                     "language": language,
-                    "translation": translation
+                    "translation": translation,
+                    "context": context,
+                    "confidence": confidence
                 })
             elif language.lower() == "english":
                 english_texts.append({
-                    "text": detected_text
+                    "text": detected_text,
+                    "context": context
                 })
         
         return {
@@ -228,12 +238,12 @@ root_agent = LlmAgent(
 Always respond with structured JSON containing:
 - scene_summary: Overall description of what's visible
 - detected_objects: List of objects with name, category, description
-- text_analysis: List of text with original, language, translation
+- text_analysis: List of text with original, language, translation, confidence, context
 - cultural_notes: List of cultural observations
 - observational_metadata: Time of day, weather conditions
 - translation_summary: Summary of any foreign text found and translated
 
-**Important:** For foreign text translation, always provide both original text and English translation.""",
+**Important:** For foreign text translation, always provide both original text and English translation with confidence levels.""",
     tools=[analyze_image_perception, extract_translations_for_user],
 )
 
