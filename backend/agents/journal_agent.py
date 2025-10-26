@@ -7,6 +7,7 @@ from datetime import datetime
 from utils.gemini_client import gemini_client
 import asyncio
 import logging
+import re
 
 # -------------------------------------------------------------------
 # ✅ Configure Logging
@@ -70,6 +71,13 @@ async def create_diary_entry(user_id: str, conversation_summary: str, photo_url:
         # Generate journal-style text
         diary_text = await gemini_client.generate_text(prompt)
         logger.info("✅ Gemini response received successfully.")
+        
+        # Remove asterisks and markdown from response
+        diary_text = re.sub(r'\*\*', '', diary_text)  # Remove bold markers
+        diary_text = re.sub(r'\*', '', diary_text)  # Remove any other asterisks
+        diary_text = re.sub(r'#+\s*', '', diary_text)  # Remove headers
+        diary_text = diary_text.strip()
+        
         logger.debug(f"Generated diary entry:\n{diary_text}\n")
 
         # Display the generated journal entry in terminal

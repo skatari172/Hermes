@@ -155,10 +155,10 @@ async def process_image(
         from utils.perception_utils import analyze_image_with_translation
         perception_result = await analyze_image_with_translation(image_base64, "base64")
         
-        # Step 2: Geo Agent - Get location context
+        # Step 2: Geo Agent - Get location context with Wikipedia nearby search
         print("🗺️ Step 2: Getting location context...")
-        from utils.geo_utils import get_location_context
-        geo_context = get_location_context(lat, lng)
+        from utils.geo_api_utils import get_geo_context_async
+        geo_context = await get_geo_context_async(lat, lng, radiusMeters=1500, lang="en")
         
         # Step 3: Context Agent - Build comprehensive context
         print("🧠 Step 3: Building context and verifying entity...")
