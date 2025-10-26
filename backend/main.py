@@ -15,7 +15,6 @@ from PIL.ExifTags import TAGS
 import os
 import json
 from datetime import datetime
-import asyncio
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -52,54 +51,6 @@ def root():
 def health_check():
     return {"status": "healthy", "message": "API is running"}
 
-def extract_coordinates_from_image(image_content: bytes):
-    """Extract GPS coordinates from image EXIF data."""
-    try:
-        from io import BytesIO
-        
-        image = Image.open(BytesIO(image_content))
-        exif_data = image._getexif()
-        
-        if exif_data is None:
-            return None
-        
-        exif = {}
-        for tag_id, value in exif_data.items():
-            tag = TAGS.get(tag_id, tag_id)
-            exif[tag] = value
-        
-        gps_info = exif.get('GPSInfo')
-        if not gps_info:
-            return None
-        
-        # Extract GPS coordinates
-        lat = gps_info.get(2)  # GPSLatitude
-        lat_ref = gps_info.get(1)  # GPSLatitudeRef
-        lng = gps_info.get(4)  # GPSLongitude
-        lng_ref = gps_info.get(3)  # GPSLongitudeRef
-        
-        if lat and lng:
-            # Convert to decimal degrees
-            def convert_to_decimal(coord, ref):
-                degrees = float(coord[0])
-                minutes = float(coord[1])
-                seconds = float(coord[2])
-                decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
-                if ref in ['S', 'W']:
-                    decimal = -decimal
-                return decimal
-            
-            lat_decimal = convert_to_decimal(lat, lat_ref)
-            lng_decimal = convert_to_decimal(lng, lng_ref)
-            
-            return {
-                "lat": lat_decimal,
-                "lng": lng_decimal
-            }
-    except Exception as e:
-        print(f"⚠️ Could not extract coordinates: {e}")
-    
-    return None
 
 @app.post("/api/image/process")
 async def process_image(
@@ -417,24 +368,6 @@ async def text_to_speech(
             "message": f"TTS generation failed: {str(e)}",
             "audio_data": None
         }
-@app.post("/api/voice/chat")
-async def voice_chat(user_id: str, session_id: str, message: str):
-    """Placeholder chat endpoint"""
-    return {
-        "status": "success",
-        "response": "This is a placeholder response. Connect to your LLM here.",
-        "session_id": session_id
-    }
-
-@app.post("/api/voice/speak")
-async def text_to_speech(user_id: str, session_id: str, text: str):
-    """ElevenLabs TTS endpoint"""
-    return {
-        "status": "success",
-        "audio_url": "https://example.com/audio.mp3",
-        "message": "Text-to-speech conversion"
-    }
-
 
 
 if __name__ == "__main__":
