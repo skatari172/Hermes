@@ -2,11 +2,9 @@
 from fastapi import APIRouter, Depends, Header, HTTPException
 from datetime import datetime, date
 from utils.auth_util import verify_firebase_token
-from services.db_service import save_journal_entry, get_journal_entries
-from models.journal import JournalEntryRequest
-from config.logger import get_logger
-from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations, get_journal_entries_by_date
+from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations
 from models.journal import JournalEntryRequest, ConversationEntry
+from config.logger import get_logger
 from firebase_admin import auth
 from typing import Optional
 import uuid
