@@ -52,24 +52,51 @@ async def generate_cultural_response_with_context(user_message: str, context_dat
                 message = turn.get("message", "")
                 conversation_context += f"{role}: {message}\n"
         
-        prompt = f"""You are Hermes, an AI cultural companion for travelers. A user has uploaded a photo and is asking about it.
+        # Check if this is an initial photo analysis or a follow-up chat message
+        is_followup = len(conversation_history) > 0 and user_message != "Tell me about what I'm seeing in this photo"
+        
+        if is_followup:
+            # For follow-up messages: Keep it very concise (1-4 sentences)
+            prompt = f"""You are Hermes, an AI cultural companion. Answer the user's question concisely.
 
-CONTEXT DATA:
+CONTEXT:
+- Entity: {entity}
+- Location: {coordinates.get('lat', 'Unknown')}, {coordinates.get('lng', 'Unknown')}
+- Cultural Summary: {cultural_summary}{conversation_context}
+
+USER QUESTION: {user_message}
+
+CRITICAL INSTRUCTIONS:
+- NEVER mention coordinates, latitude, longitude, or GPS data in your response
+- You may mention the city or region if relevant
+- Keep response to 1-2 sentences for simple questions, 3-4 sentences max for complex questions
+- Be professional and factual
+- If referencing the photo, be brief
+- Answer directly without unnecessary elaboration"""
+        else:
+            # For initial photo analysis: Structured but concise sections
+            prompt = f"""You are Hermes, an AI cultural companion. Analyze this photo professionally.
+
+CONTEXT:
 - Entity: {entity}
 - Location: {coordinates.get('lat', 'Unknown')}, {coordinates.get('lng', 'Unknown')}
 - Cultural Summary: {cultural_summary}{conversation_context}
 
 USER MESSAGE: {user_message}
 
-Respond as Hermes with:
-1. Warm, engaging personality
-2. Cultural and historical insights
-3. Travel recommendations
-4. Interesting facts about what they're seeing
-5. Translation explanations if applicable
-6. Reference the conversation context naturally if relevant
+Format your response with these brief sections:
+1. **What You're Seeing**: (1-2 sentences identifying the main subject)
+2. **Cultural Context**: (1-2 sentences about historical/cultural significance)
+3. **Key Facts**: (1-2 sentences with interesting details)
+4. **Recommendation**: (1-2 sentences if applicable)
 
-Be conversational, informative, and culturally aware. Write as if you're a knowledgeable local guide."""
+CRITICAL GUIDELINES:
+- NEVER mention coordinates, latitude, longitude, or GPS data
+- You may mention the city or region if relevant to cultural context
+- Be professional, not overly enthusiastic
+- Keep each section to 1-2 sentences maximum
+- Focus on factual information
+- Maintain a knowledgeable but concise tone"""
         
         response = model.generate_content(prompt)
         response_text = response.text.strip()
