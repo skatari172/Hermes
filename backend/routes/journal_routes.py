@@ -133,6 +133,12 @@ def get_conversation_locations(uid: str = Depends(get_user_id)):
     locations = get_conversation_locations(uid)
     return {"locations": locations}
 
+@router.get("/entries")
+def get_journal_entries_by_date_endpoint(uid: str = Depends(verify_firebase_token)):
+    """Get journal entries organized by date from journal collection"""
+    entries = get_journal_entries_by_date(uid)
+    return entries
+
 @router.get("/history")
 def get_user_journal(uid: str = Depends(verify_firebase_token)):
     """
