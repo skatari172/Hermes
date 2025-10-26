@@ -27,8 +27,10 @@ export default function TextInputComponent({
         multiline
         maxLength={maxLength}
       />
-      <TouchableOpacity style={styles.submitButton} onPress={onSubmit}>
-        <Ionicons name="send" size={20} color="#043263" />
+      <TouchableOpacity style={styles.submitButton} onPress={onSubmit} accessibilityLabel="Send message">
+        <View style={styles.sendCircle}>
+          <Ionicons name="send" size={18} color="#FFFFFF" />
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -40,13 +42,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5ECFF',
-    borderRadius: 20,
+    borderColor: '#E6F2FA',
+    borderRadius: 28,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 40,
-    maxHeight: 100,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 44,
+    maxHeight: 120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   textInput: {
     flex: 1,
@@ -56,7 +63,20 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   submitButton: {
-    padding: 4,
+    padding: 6,
     marginLeft: 8,
+  },
+  sendCircle: {
+    backgroundColor: '#01AFD1',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#01AFD1',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
 });
