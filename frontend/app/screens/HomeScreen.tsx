@@ -124,7 +124,7 @@ export default function HomeScreen() {
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
 
-        const response = await apiClient.post('/api/chat', formData, {
+        const response = await apiClient.post('/api/chat/', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
@@ -445,7 +445,7 @@ export default function HomeScreen() {
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
 
-        const response = await apiClient.post('/api/chat', formData, {
+        const response = await apiClient.post('/api/chat/', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
