@@ -5,7 +5,7 @@ from utils.auth_util import verify_firebase_token
 from services.db_service import save_journal_entry, get_journal_entries
 from models.journal import JournalEntryRequest
 from config.logger import get_logger
-from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations
+from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations, get_journal_entries_by_date
 from models.journal import JournalEntryRequest, ConversationEntry
 from firebase_admin import auth
 from typing import Optional
@@ -134,6 +134,12 @@ def get_conversation_locations(uid: str = Depends(get_user_id)):
     from services.db_service import get_conversation_locations
     locations = get_conversation_locations(uid)
     return {"locations": locations}
+
+@router.get("/entries")
+def get_journal_entries_by_date_endpoint(uid: str = Depends(verify_firebase_token)):
+    """Get journal entries organized by date from journal collection"""
+    entries = get_journal_entries_by_date(uid)
+    return entries
 
 @router.get("/history")
 def get_user_journal(uid: str = Depends(verify_firebase_token)):
