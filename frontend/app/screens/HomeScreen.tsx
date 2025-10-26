@@ -22,6 +22,9 @@ export default function HomeScreen() {
   // Auto-camera state
   const [cameraShownForCurrentFocus, setCameraShownForCurrentFocus] = useState(false);
   const [cameraPermissionStatus, setCameraPermissionStatus] = useState<ImagePicker.PermissionStatus | null>(null);
+  
+  // TTS speed control
+  const [ttsSpeed, setTtsSpeed] = useState(1.5); // Default to 1.5x speed (50% faster)
 
   // Request location permission and get current location
   useEffect(() => {
@@ -704,6 +707,7 @@ export default function HomeScreen() {
         formData.append('text', messageText);
         formData.append('session_id', 'demo_session');
         formData.append('voice_id', 'b7OWsPurC81KeahWq9j7');
+        formData.append('speed', ttsSpeed.toString());
 
         const response = await apiClient.post('/api/voice/speak', formData, {
           headers: {

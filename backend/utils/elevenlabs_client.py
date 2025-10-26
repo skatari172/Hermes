@@ -31,7 +31,8 @@ class ElevenLabsClient:
         self, 
         text: str, 
         voice_id: Optional[str] = None,
-        model: str = "eleven_flash_v2_5"  # Updated to use Flash v2.5 for low latency
+        model: str = "eleven_flash_v2_5",  # Updated to use Flash v2.5 for low latency
+        speed: float = 1.0
     ) -> bytes:
         """
         Convert text to speech and return audio bytes.
@@ -40,6 +41,7 @@ class ElevenLabsClient:
             text: Text to convert to speech
             voice_id: Optional voice ID (uses default if not provided)
             model: TTS model to use
+            speed: Speech speed multiplier (1.0 = normal, >1.0 = faster, <1.0 = slower)
             
         Returns:
             Audio bytes in MP3 format
@@ -48,12 +50,25 @@ class ElevenLabsClient:
             if not self.client:
                 raise Exception("ElevenLabs client not initialized - check API key")
             
+            # Calculate voice settings based on speed
+            # ElevenLabs uses stability and similarity settings, but we can use SSML for speed control
+            voice_settings = {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.0,
+                "use_speaker_boost": True
+            }
+            
+            # Use SSML to control speech rate
+            ssml_text = f'<speak><prosody rate="{speed}">{text}</prosody></speak>'
+            
             # Use the client's text_to_speech.convert method (correct API)
             audio_generator = self.client.text_to_speech.convert(
                 voice_id=voice_id or self.default_voice_id,
-                text=text,
+                text=ssml_text,
                 model_id=model,
-                output_format="mp3_44100_128"  # Standard MP3 format
+                output_format="mp3_44100_128",  # Standard MP3 format
+                voice_settings=voice_settings
             )
             
             # Collect all audio chunks into bytes
@@ -70,7 +85,8 @@ class ElevenLabsClient:
         self, 
         text: str, 
         voice_id: Optional[str] = None,
-        model: str = "eleven_flash_v2_5"  # Updated to use Flash v2.5 for low latency
+        model: str = "eleven_flash_v2_5",  # Updated to use Flash v2.5 for low latency
+        speed: float = 1.0
     ) -> AsyncGenerator[bytes, None]:
         """
         Stream text-to-speech conversion for real-time audio.
@@ -79,6 +95,7 @@ class ElevenLabsClient:
             text: Text to convert to speech
             voice_id: Optional voice ID (uses default if not provided)
             model: TTS model to use
+            speed: Speech speed multiplier (1.0 = normal, >1.0 = faster, <1.0 = slower)
             
         Yields:
             Audio chunks as bytes
@@ -87,12 +104,24 @@ class ElevenLabsClient:
             if not self.client:
                 raise Exception("ElevenLabs client not initialized - check API key")
             
+            # Calculate voice settings based on speed
+            voice_settings = {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.0,
+                "use_speaker_boost": True
+            }
+            
+            # Use SSML to control speech rate
+            ssml_text = f'<speak><prosody rate="{speed}">{text}</prosody></speak>'
+            
             # Use the client's text_to_speech.convert method with streaming
             audio_stream = self.client.text_to_speech.convert(
                 voice_id=voice_id or self.default_voice_id,
-                text=text,
+                text=ssml_text,
                 model_id=model,
                 output_format="mp3_44100_128",  # Standard MP3 format
+                voice_settings=voice_settings,
                 stream=True
             )
             
