@@ -50,6 +50,13 @@ async def chat_with_context(
             if previous_context.get("success"):
                 session_data["context_data"] = previous_context
         
+        # Add conversation history to context
+        conversation_history = session_data.get("conversation_history", [])
+        if previous_context:
+            previous_context["conversation_history"] = conversation_history
+        else:
+            previous_context = {"conversation_history": conversation_history}
+        
         # Generate response using context
         from utils.response_utils import generate_cultural_response_with_context
         

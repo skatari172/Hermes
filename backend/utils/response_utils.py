@@ -41,13 +41,23 @@ async def generate_cultural_response_with_context(user_message: str, context_dat
         cultural_summary = context_data.get("cultural_summary", "")
         entity = context_data.get("entity", "Unknown Entity")
         coordinates = context_data.get("coordinates", {})
+        conversation_history = context_data.get("conversation_history", [])
+        
+        # Build conversation history context
+        conversation_context = ""
+        if conversation_history:
+            conversation_context = "\n\nPrevious Conversation:\n"
+            for turn in conversation_history[-5:]:  # Last 5 messages
+                role = turn.get("role", "unknown")
+                message = turn.get("message", "")
+                conversation_context += f"{role}: {message}\n"
         
         prompt = f"""You are Hermes, an AI cultural companion for travelers. A user has uploaded a photo and is asking about it.
 
 CONTEXT DATA:
 - Entity: {entity}
 - Location: {coordinates.get('lat', 'Unknown')}, {coordinates.get('lng', 'Unknown')}
-- Cultural Summary: {cultural_summary}
+- Cultural Summary: {cultural_summary}{conversation_context}
 
 USER MESSAGE: {user_message}
 
@@ -57,6 +67,7 @@ Respond as Hermes with:
 3. Travel recommendations
 4. Interesting facts about what they're seeing
 5. Translation explanations if applicable
+6. Reference the conversation context naturally if relevant
 
 Be conversational, informative, and culturally aware. Write as if you're a knowledgeable local guide."""
         
