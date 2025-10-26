@@ -3,10 +3,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes import journal_routes
 from services.firebase_client import initialize_firebase  # Initialize Firebase first
 from routes import user_routes
+from routes import chat_routes
 import uvicorn
+import base64
+import asyncio
+from PIL import Image
+from PIL.ExifTags import TAGS
 # from agents.geo_agent import router as geo_router
 # from agents.context_agent import router as wiki_router
 import os
+import json
+from datetime import datetime
+import asyncio
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI(title="Hermes API", description="Personal AI Assistant API")
 
@@ -22,6 +34,7 @@ app.add_middleware(
 # Register routers
 app.include_router(user_routes.router)
 app.include_router(journal_routes.router)
+app.include_router(chat_routes.router)
 # app.include_router(geo_router)
 # app.include_router(wiki_router)
 
@@ -32,6 +45,221 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "message": "API is running"}
+
+def extract_coordinates_from_image(image_content: bytes):
+    """Extract GPS coordinates from image EXIF data."""
+    try:
+        from io import BytesIO
+        
+        image = Image.open(BytesIO(image_content))
+        exif_data = image._getexif()
+        
+        if exif_data is None:
+            return None
+        
+        exif = {}
+        for tag_id, value in exif_data.items():
+            tag = TAGS.get(tag_id, tag_id)
+            exif[tag] = value
+        
+        gps_info = exif.get('GPSInfo')
+        if not gps_info:
+            return None
+        
+        # Extract GPS coordinates
+        lat = gps_info.get(2)  # GPSLatitude
+        lat_ref = gps_info.get(1)  # GPSLatitudeRef
+        lng = gps_info.get(4)  # GPSLongitude
+        lng_ref = gps_info.get(3)  # GPSLongitudeRef
+        
+        if lat and lng:
+            # Convert to decimal degrees
+            def convert_to_decimal(coord, ref):
+                degrees = float(coord[0])
+                minutes = float(coord[1])
+                seconds = float(coord[2])
+                decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
+                if ref in ['S', 'W']:
+                    decimal = -decimal
+                return decimal
+            
+            lat_decimal = convert_to_decimal(lat, lat_ref)
+            lng_decimal = convert_to_decimal(lng, lng_ref)
+            
+            return {
+                "lat": lat_decimal,
+                "lng": lng_decimal
+            }
+    except Exception as e:
+        print(f"⚠️ Could not extract coordinates: {e}")
+    
+    return None
+
+@app.post("/api/image/process")
+async def process_image(
+    image_file: UploadFile = File(...),
+    user_id: str = Form(default="demo_user"),
+    session_id: str = Form(default="demo_session"),
+    entity_name: str = Form(default=None)
+):
+    """Process image through the complete agent pipeline."""
+    try:
+        # Read the image file
+        image_content = await image_file.read()
+        
+        # Check if file is empty
+        if len(image_content) == 0:
+            return {
+                "status": "error",
+                "message": "Empty image file"
+            }
+        
+        # Convert to base64
+        image_base64 = base64.b64encode(image_content).decode('utf-8')
+        
+        # Extract GPS coordinates from image automatically using location API fallback
+        from utils.location_api_standalone import process_image_location_with_api
+        
+        print("📍 Processing image location with API fallback...")
+        geo_result = process_image_location_with_api(image_base64, "base64")
+        
+        if geo_result["success"]:
+            lat = geo_result["coordinates"]["lat"]
+            lng = geo_result["coordinates"]["lng"]
+            method = geo_result.get("method", "unknown")
+            print(f"✅ Location determined ({method}): {lat}, {lng}")
+            
+            if method == "location_api":
+                api_data = geo_result.get('location_api', {})
+                print(f"🌐 Location: {api_data.get('location', 'Unknown')}")
+        else:
+            # Handle case where location cannot be determined
+            print(f"❌ Could not determine location: {geo_result['error']}")
+            return {
+                "status": "error",
+                "message": f"Could not determine location: {geo_result['error']}",
+                "error_type": "location_detection_failed",
+                "suggestion": "Check your internet connection or try using a photo with GPS metadata"
+            }
+        
+        # Import agents (using standalone versions to avoid ADK issues)
+        print("🤖 Starting complete agent pipeline...")
+        
+        # Step 1: Perception Agent (with translation priority)
+        print("📸 Step 1: Analyzing image with OCR and translation...")
+        from utils.perception_utils import analyze_image_with_translation
+        perception_result = await analyze_image_with_translation(image_base64, "base64")
+        
+        # Step 2: Geo Agent - Get location context
+        print("🗺️ Step 2: Getting location context...")
+        from agents.geo_agent import get_location_context
+        geo_context = get_location_context(lat, lng)
+        
+        # Step 3: Context Agent - Build comprehensive context
+        print("🧠 Step 3: Building context and verifying entity...")
+        from utils.context_utils import build_comprehensive_context
+        context_result = build_comprehensive_context(
+            lat=lat,
+            lng=lng,
+            perception_clues=perception_result,
+            geo_context=geo_context,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        # Step 4: Store cultural summary in database
+        print("💾 Step 4: Storing cultural summary in database...")
+        from utils.storage_utils import store_cultural_summary
+        db_result = await store_cultural_summary(context_result, user_id, session_id)
+        
+        # Step 4.5: Create journal entry after context agent completes
+        print("📖 Step 4.5: Creating journal entry...")
+        from utils.storage_utils import create_journal_entry
+        journal_result = await create_journal_entry(context_result, user_id, session_id)
+        
+        # Step 5: Response Agent - Generate cultural response
+        print("💬 Step 5: Generating cultural response...")
+        from utils.response_utils import generate_cultural_response_with_context
+        response_result = await generate_cultural_response_with_context(
+            user_message="Tell me about what I'm seeing in this photo",
+            context_data=context_result,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        # Step 6: Store context in chat session for follow-ups
+        print("💾 Step 6: Storing context in chat session...")
+        from routes.chat_routes import chat_sessions
+        
+        session_key = f"{user_id}_{session_id}"
+        if session_key not in chat_sessions:
+            chat_sessions[session_key] = {
+                "user_id": user_id,
+                "session_id": session_id,
+                "conversation_history": [],
+                "context_data": None,
+                "created_at": datetime.utcnow().isoformat(),
+                "last_activity": datetime.utcnow().isoformat()
+            }
+        
+        # Store the context data in the session
+        chat_sessions[session_key]["context_data"] = context_result
+        chat_sessions[session_key]["last_activity"] = datetime.utcnow().isoformat()
+        
+        print(f"✅ Context stored in chat session: {session_key}")
+        
+        return {
+            "status": "success",
+            "message": "Image processed successfully",
+            "data": {
+                "coordinates": {"lat": lat, "lng": lng},
+                "location_method": geo_result.get("method", "unknown"),
+                "perception": {
+                    "scene_summary": perception_result.get('scene_summary', ''),
+                    "translated_text": perception_result.get('translated_text', []),
+                    "cultural_landmarks": perception_result.get('cultural_landmarks', []),
+                    "architectural_style": perception_result.get('architectural_style', ''),
+                    "cultural_elements": perception_result.get('cultural_elements', []),
+                    "atmosphere": perception_result.get('atmosphere', ''),
+                    "cultural_notes": perception_result.get('cultural_notes', [])
+                },
+                "geo": geo_context,
+                "context": {
+                    "entity_verified": context_result.get('verified', False),
+                    "entity_name": context_result.get('entity', 'Unknown'),
+                    "entity_type": context_result.get('entity_type', 'unknown'),
+                    "certainty": context_result.get('certainty', 0.0),
+                    "cultural_summary": context_result.get('cultural_summary', '')
+                },
+                "response": {
+                    "text": response_result.get('response', ''),
+                    "user_message": response_result.get('user_message', ''),
+                    "context_used": response_result.get('context_used', {}),
+                    "metadata": response_result.get('metadata', {})
+                },
+                "database": {
+                    "stored": db_result.get('success', False),
+                    "message": db_result.get('message', '')
+                },
+                "journal": {
+                    "created": journal_result.get('success', False),
+                    "message": journal_result.get('message', ''),
+                    "journal_data": journal_result.get('journal_data', {})
+                },
+                "session": {
+                    "stored": True,
+                    "session_key": session_key,
+                    "has_context": True
+                }
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Image processing error: {e}")
+        return {
+            "status": "error",
+            "message": f"Image processing failed: {str(e)}"
+        }
 
 @app.post("/api/voice/transcribe")
 async def transcribe_audio(
@@ -135,47 +363,6 @@ async def transcribe_audio(
             "transcribed_text": ""
         }
 
-@app.post("/api/chat")
-async def chat_with_hermes(
-    message: str = Form(...),
-    user_id: str = Form(default="demo_user"),
-    session_id: str = Form(default="demo_session")
-):
-    """Chat with Hermes AI - processes message and returns response with optional TTS"""
-    try:
-        from agents.conversation_agent import conversation_agent
-        
-        # Process message through conversation agent
-        result = await conversation_agent.process_message(
-            user_message=message,
-            user_id=user_id,
-            session_id=session_id
-        )
-        
-        response_data = {
-            "status": "success",
-            "response": result["response"],
-            "tts_audio_data": result.get("tts_audio_data"),
-            "context_used": result.get("context_used", {}),
-            "timestamp": result.get("timestamp"),
-            "user_id": user_id,
-            "session_id": session_id
-        }
-        
-        # Debug logging
-        print(f"🔍 Chat Debug: Response length: {len(result['response'])}")
-        print(f"🔍 Chat Debug: TTS audio data exists: {result.get('tts_audio_data') is not None}")
-        if result.get("tts_audio_data"):
-            print(f"🔍 Chat Debug: TTS audio data length: {len(result['tts_audio_data'])}")
-        
-        return response_data
-        
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Chat processing failed: {str(e)}",
-            "response": "I apologize, but I'm having trouble processing your message right now. Please try again."
-        }
 
 @app.post("/api/voice/speak")
 async def text_to_speech(

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraButton, MicButton, TextInput } from '../components/homecomponents';
 import * as FileSystem from 'expo-file-system';
@@ -9,6 +9,7 @@ export default function HomeScreen() {
   const [messages, setMessages] = useState<Array<{id: string, text: string, timestamp: Date, isUser: boolean, imageUri?: string}>>([]);
   const [inputText, setInputText] = useState('');
   const [ttsEnabled, setTtsEnabled] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Auto-scroll to bottom when new messages are added
@@ -47,6 +48,7 @@ export default function HomeScreen() {
       setMessages(prev => [...prev, userMessage]);
       const messageText = inputText.trim();
       setInputText('');
+      setIsLoading(true);
 
       try {
         // Auto-detect backend URL
@@ -76,7 +78,7 @@ export default function HomeScreen() {
 
         // Send message to backend
         const formData = new FormData();
-        formData.append('message', messageText);
+        formData.append('user_message', messageText);
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
 
@@ -220,11 +222,14 @@ export default function HomeScreen() {
           isUser: false
         };
         setMessages(prev => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
       }
     }
   };
 
-  const handleImageCaptured = (imageUri: string) => {
+  const handleImageCaptured = async (imageUri: string) => {
+    // Add user's image message to chat
     const newMessage = {
       id: Date.now().toString(),
       text: '',
@@ -233,6 +238,154 @@ export default function HomeScreen() {
       imageUri: imageUri
     };
     setMessages(prev => [...prev, newMessage]);
+    setIsLoading(true);
+
+    try {
+      console.log('📤 Sending image to Hermes backend...');
+      
+      // Auto-detect backend URL (same logic as handleSubmitMessage)
+      const possibleURLs = [
+        process.env.EXPO_PUBLIC_API_URL,
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'http://10.0.2.2:8000',
+        'http://192.168.1.100:8000',
+        'http://192.168.0.100:8000',
+        'http://192.168.1.101:8000',
+        'http://192.168.0.101:8000',
+      ];
+
+      let backendURL = 'http://localhost:8000';
+      for (const url of possibleURLs) {
+        try {
+          const healthCheck = await fetch(`${url}/health`);
+          if (healthCheck.ok) {
+            backendURL = url;
+            break;
+          }
+        } catch (error) {
+          // Continue to next URL
+        }
+      }
+
+      // Create FormData for image upload
+      const formData = new FormData();
+      formData.append('image_file', {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: 'image.jpg',
+      } as any);
+      formData.append('user_id', 'demo_user');
+      formData.append('session_id', 'demo_session');
+
+      console.log('📤 Sending to:', `${backendURL}/api/image/process`);
+
+      // Send image to backend for processing
+      const response = await fetch(`${backendURL}/api/image/process`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('📥 Hermes response:', result);
+        
+        if (result.status === 'success') {
+          // Add Hermes response to chat
+          const hermesMessage = {
+            id: (Date.now() + 1).toString(),
+            text: result.data.response.text,
+            timestamp: new Date(),
+            isUser: false
+          };
+          setMessages(prev => [...prev, hermesMessage]);
+
+          // Handle TTS if enabled and audio data is available
+          if (ttsEnabled && result.data.response.tts_audio_data) {
+            try {
+              console.log('🔊 Playing TTS for image response...');
+              const audioData = result.data.response.tts_audio_data;
+              
+              if (!FileSystem || !FileSystem.EncodingType) {
+                // Fallback: Try using data URL with expo-av directly
+                const dataUrl = `data:audio/mp3;base64,${audioData}`;
+                
+                const { sound } = await Audio.Sound.createAsync(
+                  { uri: dataUrl },
+                  { shouldPlay: true }
+                );
+                
+                sound.setOnPlaybackStatusUpdate((status) => {
+                  if (status.isLoaded && status.didJustFinish) {
+                    sound.unloadAsync();
+                  }
+                });
+                
+                return;
+              }
+              
+              // Write base64 audio data to a temporary file
+              const fileName = `tts_audio_${Date.now()}.mp3`;
+              const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+              
+              await FileSystem.writeAsStringAsync(fileUri, audioData, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              
+              // Play the audio file using expo-av
+              const { sound } = await Audio.Sound.createAsync(
+                { uri: fileUri },
+                { shouldPlay: true }
+              );
+              
+              // Clean up the file after playback
+              sound.setOnPlaybackStatusUpdate((status) => {
+                if (status.isLoaded && status.didJustFinish) {
+                  sound.unloadAsync();
+                  FileSystem.deleteAsync(fileUri, { idempotent: true });
+                }
+              });
+              
+            } catch (error) {
+              console.error('TTS playback error:', error);
+            }
+          }
+        } else {
+          // Add error message
+          const errorMessage = {
+            id: (Date.now() + 1).toString(),
+            text: result.message || 'Sorry, I encountered an error processing your image.',
+            timestamp: new Date(),
+            isUser: false
+          };
+          setMessages(prev => [...prev, errorMessage]);
+        }
+      } else {
+        // Add error message for network issues
+        const errorMessage = {
+          id: (Date.now() + 1).toString(),
+          text: 'Sorry, I cannot connect to the server right now.',
+          timestamp: new Date(),
+          isUser: false
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('Image processing error:', error);
+      // Add error message
+      const errorMessage = {
+        id: (Date.now() + 1).toString(),
+        text: 'Sorry, something went wrong processing your image. Please try again.',
+        timestamp: new Date(),
+        isUser: false
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAudioRecorded = (audioUri: string) => {
@@ -289,7 +442,7 @@ export default function HomeScreen() {
   
         // Send message to backend
         const formData = new FormData();
-        formData.append('message', transcribedText.trim());
+        formData.append('user_message', transcribedText.trim());
         formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
   
@@ -588,6 +741,15 @@ export default function HomeScreen() {
             )}
           </View>
         ))}
+        
+        {/* Loading Indicator */}
+        {isLoading && (
+          <View style={styles.messageContainer}>
+            <View style={[styles.messageBubble, styles.botMessage, styles.loadingMessage]}>
+              <ActivityIndicator size="small" color="#01AFD1" />
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       {/* Input Area */}
@@ -744,5 +906,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5ECFF',
     minHeight: 60,
+  },
+  loadingMessage: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
 });

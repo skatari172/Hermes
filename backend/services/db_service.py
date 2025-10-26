@@ -2,6 +2,25 @@
 from services.firebase_client import db
 from google.cloud import firestore
 
+def save_cultural_summary(user_id: str, session_id: str, cultural_data: dict):
+    """
+    Saves cultural summary data to Firestore for a specific user session.
+    """
+    doc_ref = db.collection("cultural_summaries").document(f"{user_id}_{session_id}")
+    
+    # Set the document with the cultural data
+    doc_ref.set(cultural_data, merge=True)
+
+
+def get_cultural_summary(user_id: str, session_id: str):
+    """
+    Retrieves cultural summary data for a specific user session.
+    """
+    doc_ref = db.collection("cultural_summaries").document(f"{user_id}_{session_id}")
+    doc = doc_ref.get()
+    return doc.to_dict() if doc.exists else None
+
+
 def save_journal_entry(uid: str, entry: dict):
     """
     Adds a chat summary (photo + summary + timestamp) to the user's Firestore document.
