@@ -703,7 +703,7 @@ export default function HomeScreen() {
         const formData = new FormData();
         formData.append('text', messageText);
         formData.append('session_id', 'demo_session');
-        formData.append('voice_id', 'pNInz6obpgDQGcFmaJgB');
+        formData.append('voice_id', 'b7OWsPurC81KeahWq9j7');
 
         const response = await apiClient.post('/api/voice/speak', formData, {
           headers: {
