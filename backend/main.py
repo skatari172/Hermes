@@ -203,9 +203,16 @@ async def upload_image(
         try:
             from urllib.parse import urlparse, urljoin
             parsed = urlparse(photo_url)
-            if parsed.hostname in ('localhost', '127.0.0.1'):
+            # If photo_url is already absolute (http/https), keep it
+            if parsed.scheme and parsed.scheme.startswith('http'):
+                pass
+            else:
+                # If it's a relative path like 'uploads/...' or no scheme, build absolute URL using request base
                 base = str(request.base_url)
-                photo_url = urljoin(base, parsed.path.lstrip('/'))
+                # Ensure we use the path part
+                path = parsed.path if parsed.path else photo_url
+                path = path.lstrip('/')
+                photo_url = urljoin(base, path)
                 logger.info(f"🔁 Normalized photo_url for client reachability: {photo_url}")
         except Exception:
             logger.warning("Could not normalize photo_url; leaving as-is")

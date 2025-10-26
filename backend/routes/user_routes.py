@@ -20,11 +20,33 @@ def _normalize_photo_url(photo_url: str, request: Request) -> str:
             return photo_url
         parsed = urlparse(photo_url)
         hostname = parsed.hostname
-        if hostname in ("localhost", "127.0.0.1"):
-            # Rebuild URL using the incoming request base URL
+
+        # If already absolute http(s) URL, return as-is
+        if parsed.scheme and parsed.scheme.startswith('http'):
+            return photo_url
+
+        # If path starts with uploads/ (local static files), serve via request base
+        path = photo_url.lstrip('/')
+        if path.startswith('uploads'):
             base = str(request.base_url)
-            # Use the path from the parsed URL
+            return urljoin(base, path)
+
+        # If hostname indicates localhost, rewrite to request base
+        if hostname in ("localhost", "127.0.0.1"):
+            base = str(request.base_url)
             return urljoin(base, parsed.path.lstrip('/'))
+
+        # If this looks like a storage path (e.g., 'profile/uid.jpg' or 'uploads/uid/...') and we have a bucket name, construct a GCS URL
+        if hasattr(storage_client, 'bucket_name') and storage_client.bucket_name:
+            try:
+                bucket = storage_client.bucket_name
+                # Ensure path has no leading slash
+                p = path
+                return f"https://storage.googleapis.com/{bucket}/{p}"
+            except Exception:
+                pass
+
+        # Fallback: return original
         return photo_url
     except Exception as e:
         logger.debug(f"normalize_photo_url failed: {e}")
@@ -164,46 +186,44 @@ async def upload_profile_photo(request: Request, file: UploadFile = File(...), u
         if not file.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail='Invalid file type; image required')
 
-            data = await file.read()
-            if len(data) == 0:
-                raise HTTPException(status_code=400, detail='Empty file')
+        # Read file bytes
+        data = await file.read()
+        if len(data) == 0:
+            raise HTTPException(status_code=400, detail='Empty file')
 
-            logger.info(f"POST /user/profile/photo received file='{file.filename}' content_type={file.content_type} size={len(data)} for uid={uid}")
+        logger.info(f"POST /user/profile/photo received file='{file.filename}' content_type={file.content_type} size={len(data)} for uid={uid}")
 
-            # Upload via storage client (will use Firebase bucket if configured or local fallback)
-            photo_url = await storage_client.upload_profile_image(image_data=data, user_id=uid, content_type=file.content_type)
+        # Upload via storage client (will use Firebase bucket if configured or local fallback)
+        photo_url = await storage_client.upload_profile_image(image_data=data, user_id=uid, content_type=file.content_type)
 
-            logger.info(f"Profile image stored for uid={uid} -> {photo_url}")
+        logger.info(f"Profile image stored for uid={uid} -> {photo_url}")
 
-            if not photo_url:
-                raise HTTPException(status_code=500, detail='Failed to store profile image')
+        if not photo_url:
+            raise HTTPException(status_code=500, detail='Failed to store profile image')
 
-            # Normalize local URLs so clients receive a reachable address
-            try:
-                photo_url = _normalize_photo_url(photo_url, request)
-            except Exception:
-                pass
+        # Normalize returned URL into an absolute reachable URL
+        try:
+            photo_url = _normalize_photo_url(photo_url, request)
+        except Exception:
+            logger.debug("Photo URL normalization failed; returning original")
 
-            # Update Firebase Auth user profile (photo_url)
-            try:
-                auth.update_user(uid, photo_url=photo_url)
-            except Exception as e:
-                # Log but continue - still return URL
-                logger.warning(f"Warning: failed to update Firebase Auth photo_url: {e}")
+        # Update Firebase Auth user profile (photo_url)
+        try:
+            auth.update_user(uid, photo_url=photo_url)
+        except Exception as e:
+            # Log but continue - still return URL
+            logger.warning(f"Warning: failed to update Firebase Auth photo_url: {e}")
 
-            # Update Firestore users/{uid} doc with photo_url
-            try:
-                db_service_ref = db_service
-                # Save minimal user metadata
-                db_service_ref.save_journal_entry  # touch to ensure import
-                from services.firebase_client import db
-                db.collection('users').document(uid).set({
-                    'photo_url': photo_url
-                }, merge=True)
-            except Exception as e:
-                logger.warning(f"Warning: failed to update Firestore user doc: {e}")
+        # Update Firestore users/{uid} doc with photo_url
+        try:
+            from services.firebase_client import db
+            db.collection('users').document(uid).set({
+                'photo_url': photo_url
+            }, merge=True)
+        except Exception as e:
+            logger.warning(f"Warning: failed to update Firestore user doc: {e}")
 
-            return {'status': 'success', 'photo_url': photo_url}
+        return {'status': 'success', 'photo_url': photo_url}
 
     except HTTPException:
         raise
