@@ -17,6 +17,42 @@ export const journalStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 5,
   },
+  // Larger bubble used when we have a photo to show in the marker
+  markerBubbleLarge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e6e6e6',
+  },
+  markerImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+  },
+  markerBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    zIndex: 10,
+  },
   markerPointer: {
     width: 0,
     height: 0,
@@ -238,7 +274,9 @@ export const journalStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 20,
-    paddingTop: 30,
+    // Increased top padding to avoid being covered by notches / dynamic island on modern iPhones
+    // If you prefer a dynamic solution, we can switch to SafeAreaView or react-native-safe-area-context.
+    paddingTop: 56,
   },
   pinDetailHeaderContent: {
     flexDirection: 'row',
@@ -392,7 +430,7 @@ export const journalStyles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
-    marginTop: 80, // Account for toggle buttons
+    marginTop: 120, // Account for toggle buttons (moved down to avoid overlapping the header)
   },
   filterRow: {
     flexDirection: 'row',

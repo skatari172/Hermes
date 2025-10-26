@@ -1,13 +1,16 @@
 # backend/routes/journal_routes.py
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from urllib.parse import urljoin, urlparse
 from datetime import datetime, date
 from utils.auth_util import verify_firebase_token
 from services.db_service import save_journal_entry, get_journal_entries
+from fastapi import Request
 from models.journal import JournalEntryRequest
 from config.logger import get_logger
 from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations, get_journal_entries_by_date, update_journal_entry
 from models.journal import JournalEntryRequest, ConversationEntry, JournalEntryUpdate
 from services.db_service import save_journal_entry, get_journal_entries, get_daily_conversations, save_conversation_entry, get_conversation_locations, get_journal_entries_by_date
+from services.db_service import save_entry, get_entries_for_date
 from models.journal import JournalEntryRequest, ConversationEntry
 from config.logger import get_logger
 from firebase_admin import auth
@@ -16,6 +19,32 @@ import uuid
 
 router = APIRouter(prefix="/journal", tags=["Journal"])
 logger = get_logger(__name__)
+
+
+def _normalize_photo_url(photo_url: str, request: Request) -> str:
+    """Normalize stored photo paths to absolute URLs using the incoming request base URL."""
+    try:
+        if not photo_url:
+            return photo_url
+        p = str(photo_url).strip()
+        # Treat explicit placeholder markers as missing images
+        if 'placeholder_image_url' in p.lower():
+            return None
+        # If already absolute, return as-is
+        if p.startswith('http://') or p.startswith('https://'):
+            return p
+        # If looks like an uploads or profile local path, join with request.base_url
+        if p.startswith('/'):
+            p = p.lstrip('/')
+        if p.startswith('uploads') or p.startswith('profile'):
+            base = str(request.base_url)
+            return urljoin(base, p)
+        # If it looks like a gs:// or storage url, return as-is
+        if 'storage.googleapis.com' in p or p.startswith('gs://'):
+            return p
+        return photo_url
+    except Exception:
+        return photo_url
 
 def get_user_id(authorization: str = Header(None)):
     """
@@ -75,12 +104,31 @@ def add_conversation_entry(
 
 @router.get("/conversations")
 def get_user_conversations(
+    request: Request,
     uid: str = Depends(get_user_id),
     date_filter: Optional[str] = None
 ):
-    """Get user conversations, optionally filtered by date"""
+    """Get user conversations, optionally filtered by date. Normalizes photo URLs to be reachable by the client."""
     print(f"🔍 Getting conversations for user: {uid}")
     conversations = get_daily_conversations(uid, date_filter)
+
+    # Normalize photo URLs in-place
+    try:
+        def walk(o):
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if k in ("photo_url", "photoUrl") and v:
+                        o[k] = _normalize_photo_url(v, request)
+                    else:
+                        walk(v)
+            elif isinstance(o, list):
+                for item in o:
+                    walk(item)
+
+        walk(conversations)
+    except Exception:
+        pass
+
     print(f"📋 Found conversations: {conversations}")
     return conversations
 
@@ -254,23 +302,92 @@ def create_test_conversation(uid: str = Depends(get_user_id)):
     }
 
 @router.get("/locations")
-def get_conversation_locations(uid: str = Depends(get_user_id)):
-    """Get all conversation locations for map display"""
+def get_conversation_locations(request: Request, uid: str = Depends(get_user_id)):
+    """Get all conversation locations for map display and normalize photo URLs."""
     from services.db_service import get_conversation_locations
     locations = get_conversation_locations(uid)
+    try:
+        for loc in locations:
+            if loc.get('photo_url'):
+                loc['photo_url'] = _normalize_photo_url(loc['photo_url'], request)
+            # Also normalize nested conversation photo URLs if present
+            if loc.get('conversations') and isinstance(loc.get('conversations'), list):
+                for conv in loc['conversations']:
+                    if conv.get('photo_url'):
+                        conv['photo_url'] = _normalize_photo_url(conv['photo_url'], request)
+    except Exception:
+        pass
+
     return {"locations": locations}
 
-@router.get("/entries")
-def get_journal_entries_by_date_endpoint(uid: str = Depends(verify_firebase_token)):
-    """Get journal entries organized by date from journal collection"""
-    entries = get_journal_entries_by_date(uid)
-    return entries
+
+@router.get("/daily_entries")
+def get_daily_entries(request: Request, uid: str = Depends(verify_firebase_token), date: Optional[str] = None):
+    """
+    Return per-day centralized entries (summary + images + entries list) from the `entries` collection.
+    If `date` is provided, returns only that date; otherwise returns a map of available dates.
+    """
+    try:
+        # If a specific date requested, return only that date
+        if date:
+            result = get_entries_for_date(uid, date)
+            # Normalize any image URLs using request
+            try:
+                if result.get('images'):
+                    result['images'] = [ _normalize_photo_url(u, request) for u in result['images'] if u and not (isinstance(u, str) and 'placeholder_image_url' in u.lower()) ]
+                # Normalize image URLs inside entries
+                for e in result.get('entries', []):
+                    if e.get('photo_url'):
+                        e['photo_url'] = _normalize_photo_url(e['photo_url'], request)
+            except Exception:
+                pass
+            return {date: result}
+
+        # No date specified: try to return all dates available for this user
+        from services.firebase_client import db
+        doc = db.collection('entries').document(uid).get()
+        if not doc.exists:
+            return {"daily_entries": {}}
+
+        data = doc.to_dict()
+        daily = {}
+        for k, v in data.items():
+            if k == 'summaries':
+                continue
+            # For each date map, build the entries/summary/images bundle
+            bundle = get_entries_for_date(uid, k)
+            # Normalize images
+            try:
+                bundle['images'] = [ _normalize_photo_url(u, request) for u in bundle.get('images', []) if u and not (isinstance(u, str) and 'placeholder_image_url' in u.lower()) ]
+                for e in bundle.get('entries', []):
+                    if e.get('photo_url'):
+                        e['photo_url'] = _normalize_photo_url(e['photo_url'], request)
+            except Exception:
+                pass
+            daily[k] = bundle
+
+        return {"daily_entries": daily}
+    except Exception as e:
+        return {"error": str(e)}
 
 @router.get("/entries")
-def get_journal_entries_by_date_endpoint(uid: str = Depends(verify_firebase_token)):
-    """Get journal entries organized by date from journal collection"""
+def get_journal_entries_by_date_endpoint(request: Request, uid: str = Depends(verify_firebase_token)):
+    """Get journal entries organized by date from journal collection and normalize photo URLs."""
     entries = get_journal_entries_by_date(uid)
+    try:
+        journal_entries = entries.get('journal_entries', {})
+        for date_key, arr in journal_entries.items():
+            for entry in arr:
+                # Some entries use 'photoUrl' key
+                if entry.get('photoUrl'):
+                    entry['photoUrl'] = _normalize_photo_url(entry['photoUrl'], request)
+                if entry.get('photo_url'):
+                    entry['photo_url'] = _normalize_photo_url(entry['photo_url'], request)
+    except Exception:
+        pass
     return entries
+
+# Note: /entries endpoint with Request-aware normalization is defined above.
 
 @router.patch("/entries/{timestamp}")
 def update_journal_entry_endpoint(
@@ -286,7 +403,7 @@ def update_journal_entry_endpoint(
         raise HTTPException(status_code=404, detail="Journal entry not found")
 
 @router.get("/history")
-def get_user_journal(uid: str = Depends(verify_firebase_token)):
+def get_user_journal(request: Request, uid: str = Depends(verify_firebase_token)):
     """
     Get user journal history with debug information.
     """
@@ -295,6 +412,22 @@ def get_user_journal(uid: str = Depends(verify_firebase_token)):
         
         # Get journal entries
         journal_data = get_journal_entries(uid)
+
+        # Normalize photo URLs in conversation entries if present
+        try:
+            def walk(o):
+                if isinstance(o, dict):
+                    for k, v in o.items():
+                        if k in ("photo_url", "photoUrl") and v:
+                            o[k] = _normalize_photo_url(v, request)
+                        else:
+                            walk(v)
+                elif isinstance(o, list):
+                    for item in o:
+                        walk(item)
+            walk(journal_data)
+        except Exception:
+            pass
         
         # Add debug information
         entries = journal_data.get("conversation", [])  # Use "conversation" key

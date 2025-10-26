@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { Dimensions } from 'react-native';
 import { View, Text, TextInput, StyleSheet, ActivityIndicator, Modal, TouchableOpacity, ScrollView, FlatList, Image, PanResponder, Animated, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
 import type { LocationObjectCoords } from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
@@ -30,6 +31,8 @@ interface DailyConversation {
     longitude: number;
     location_name: string;
   }>;
+  diarySummary?: string;
+  images?: string[];
 }
 
 interface ConversationLocation {
@@ -68,6 +71,7 @@ export default function JournalScreen() {
   // Conversation detail modal states
   const [showConversationModal, setShowConversationModal] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<ConversationLocation | null>(null);
+  const [fullPageMode, setFullPageMode] = useState(false);
   
   // Edit mode states
   const [isEditing, setIsEditing] = useState(false);
@@ -174,10 +178,36 @@ export default function JournalScreen() {
       // Load journal entries by date from journal collection
       const journalResponse = await apiClient.get('/journal/entries');
       console.log('📖 Journal entries response:', journalResponse.data);
+
+      // Also fetch centralized per-day bundles (images + summary) from entries collection
+      let dailyEntriesMap: Record<string, any> = {};
+      try {
+        const entriesResp = await apiClient.get('/journal/daily_entries');
+        console.log('🗂️ Daily entries (entries collection) response:', entriesResp.data);
+        if (entriesResp.data && entriesResp.data.daily_entries) {
+          dailyEntriesMap = entriesResp.data.daily_entries;
+        }
+      } catch (e) {
+        console.warn('Could not fetch /journal/daily_entries for list view images:', e);
+      }
+
       if (journalResponse.data && journalResponse.data.journal_entries) {
         const journalData = journalResponse.data.journal_entries;
         
         // Transform journal entries into daily format
+        const normalizeUrl = (url: string | undefined | null) => {
+          if (!url) return null;
+          const trimmed = String(url || '').trim();
+          if (!trimmed) return null;
+          // Filter out known placeholder tokens that may come from older DB entries
+          if (trimmed.toLowerCase().includes('placeholder_image_url')) return null;
+          if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+          // Make sure baseURL is present
+          const base = apiClient.defaults.baseURL || '';
+          if (trimmed.startsWith('/')) return `${base}${trimmed}`;
+          return `${base}/${trimmed}`;
+        };
+
         const dailyConversationsData: DailyConversation[] = Object.entries(journalData)
           .map(([date, entries]: [string, any]) => {
             const entryArray = Array.isArray(entries) ? entries : [];
@@ -187,11 +217,12 @@ export default function JournalScreen() {
               message: entry.summary || "Journal Entry",
               response: entry.diary || entry.summary || "No summary available",
               timestamp: entry.timestamp || "",
-              latitude: undefined,
-              longitude: undefined,
-              location_name: undefined,
-              photo_url: entry.photoUrl,
-              session_id: ""
+              latitude: entry.latitude,
+              longitude: entry.longitude,
+              location_name: entry.location_name,
+              // Support both camelCase and snake_case keys from backend
+              photo_url: normalizeUrl(entry.photoUrl || entry.photo_url || entry.photo) || undefined,
+              session_id: entry.session_id || ""
             }));
 
             const locations = entryArray
@@ -202,11 +233,69 @@ export default function JournalScreen() {
                 location_name: entry.location_name || 'Unknown Location'
               }));
 
+            // Collect images for the day.
+            // Prefer images provided by the centralized `entries` collection (which are normalized by the backend)
+            // Fallback to collecting from the journal entries if none are available.
+            let images: string[] = [];
+            try {
+              const bundle = dailyEntriesMap[date];
+              if (bundle && Array.isArray(bundle.images) && bundle.images.length > 0) {
+                // bundle.images may already contain normalized absolute URLs from backend
+                images = bundle.images.map((u: string) => normalizeUrl(u)).filter(Boolean) as string[];
+              }
+            } catch (e) {
+              // ignore and fall back
+            }
+
+            // Helper: scan an entry for any photo-like fields (be permissive to handle typos)
+            const extractPhotoFromEntry = (ent: any) => {
+              if (!ent || typeof ent !== 'object') return null;
+              const candidates: {k:string;v:any}[] = [];
+              for (const k of Object.keys(ent)) {
+                if (/photo/i.test(k) && ent[k]) {
+                  candidates.push({k, v: ent[k]});
+                }
+              }
+              // Prefer common keys first
+              const preferred = candidates.find(c => ["photo_url","photoUrl","photo"].includes(c.k));
+              const pick = preferred || candidates[0];
+              if (!pick) return null;
+              return normalizeUrl(pick.v) || null;
+            };
+
+            if (!images || images.length === 0) {
+              // Build from journal entries, but be permissive about key names
+              const found: string[] = [];
+              for (const e of entryArray) {
+                const p = extractPhotoFromEntry(e);
+                // Logging photo-like fields for debugging
+                const rawPhotoFields: Record<string, any> = {};
+                for (const k of Object.keys(e)) {
+                  if (/photo/i.test(k)) rawPhotoFields[k] = e[k];
+                }
+                if (Object.keys(rawPhotoFields).length) {
+                  console.log(`🔎 Entry photo fields for date ${date}:`, rawPhotoFields);
+                }
+                if (p) found.push(p);
+              }
+              images = found.filter(Boolean);
+            }
+
+            console.log(`📸 Final images for ${date}:`, images);
+
+            // Prefer an existing diary field (current generated summary). If none, fall back to concatenated summaries.
+            const diaryEntry = entryArray.find((e: any) => e.diary && String(e.diary).trim());
+            const diarySummary = diaryEntry
+              ? diaryEntry.diary
+              : entryArray.map((e: any) => e.summary || e.response || '').filter(Boolean).join('\n\n') || '';
+
             return {
               date,
               conversations,
               totalMessages: entryArray.length,
-              locations
+              locations,
+              diarySummary,
+              images
             };
           })
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort by date descending
@@ -219,23 +308,55 @@ export default function JournalScreen() {
     }
   };
 
-  const handleMarkerPress = (conversationLocation: ConversationLocation) => {
-    setSelectedConversation(conversationLocation);
-    setShowConversationModal(true);
-    
-    // Zoom to the selected location
-    if (mapRef) {
-      const camera = {
-        center: {
-          latitude: conversationLocation.latitude - 1.3e-3,
-          longitude: conversationLocation.longitude,
-        },
-        zoom: 18,
-        heading: 0,
-        pitch: 0,
-      };
-      
-      mapRef.animateCamera(camera, { duration: 1000 });
+  const handleMarkerPress = async (conversationLocation: ConversationLocation) => {
+    // Only fetch the latest diary summary for the date and attach it to the
+    // selectedConversation. Do NOT modify photos or conversation arrays here.
+    try {
+      if (conversationLocation && conversationLocation.date) {
+        try {
+          const resp = await apiClient.get('/journal/daily_entries', { params: { date: conversationLocation.date } });
+          // Expect backend to return { <date>: { entries, summary, images } }
+          const bundle = resp.data && (resp.data[conversationLocation.date] || resp.data[Object.keys(resp.data)[0]]);
+          if (bundle) {
+            // Prefer bundle.summary (the generated diary) for the modal's daily summary
+            if (bundle.summary) {
+              conversationLocation.response = bundle.summary;
+            } else if (Array.isArray(bundle.entries) && bundle.entries.length > 0) {
+              // Fallback: prefer any diary field on entries, then summary, then response
+              const diaryEntry = bundle.entries.find((e: any) => e && (e.diary || e.summary || e.response));
+              if (diaryEntry) {
+                conversationLocation.response = diaryEntry.diary || diaryEntry.summary || diaryEntry.response || conversationLocation.response;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Could not fetch daily_entries for marker:', e);
+        }
+      }
+
+      // Open modal without touching photo fields
+      setSelectedConversation(conversationLocation);
+      setShowConversationModal(true);
+
+      // Zoom to the selected location
+      if (mapRef) {
+        const camera = {
+          center: {
+            latitude: conversationLocation.latitude - 1.3e-3,
+            longitude: conversationLocation.longitude,
+          },
+          zoom: 18,
+          heading: 0,
+          pitch: 0,
+        };
+
+        mapRef.animateCamera(camera, { duration: 1000 });
+      }
+    } catch (err) {
+      console.error('Error handling marker press:', err);
+      // Fallback to original behaviour
+      setSelectedConversation(conversationLocation);
+      setShowConversationModal(true);
     }
   };
 
@@ -245,6 +366,7 @@ export default function JournalScreen() {
     setIsEditing(false);
     setEditableMessage('');
     setEditableResponse('');
+    setFullPageMode(false);
   };
 
   const handleEditPress = () => {
@@ -293,6 +415,31 @@ export default function JournalScreen() {
     loadConversationData().then(() => setRefreshing(false));
   }, []);
 
+  // Photos gallery renderer moved to component scope so it can be reused
+  const IMAGE_SIZE = Math.floor((Dimensions.get('window').width - 64) / 3);
+
+  const renderPhotosGallery = (convs: any[] | undefined) => {
+    if (!convs || convs.length === 0) return null;
+    // convs may be array of url strings or conversation objects with photo_url
+    const imgs: string[] = convs.map((c: any) => typeof c === 'string' ? c : (c.photo_url || c.photoUrl || c.photo)).filter(Boolean);
+    if (!imgs.length) return null;
+
+    return (
+      <>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: '#007AFF', marginTop: 20, marginBottom: 8 }}>Photos</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+          {imgs.map((u, idx) => (
+            <Image
+              key={idx}
+              source={{ uri: u }}
+              style={{ width: IMAGE_SIZE, height: IMAGE_SIZE * 0.75, borderRadius: 8, marginBottom: 8 }}
+            />
+          ))}
+        </View>
+      </>
+    );
+  };
+
   const renderDailyConversationItem = ({ item }: { item: DailyConversation }) => {
     const formattedDate = new Date(item.date).toLocaleDateString('en-US', {
       weekday: 'long',
@@ -301,86 +448,69 @@ export default function JournalScreen() {
       day: 'numeric'
     });
 
-    const handleConversationPress = (conversation: ConversationEntry) => {
-      // Always open modal, even without location data
-      const conversationLocation: ConversationLocation = {
-        id: `${item.date}_${conversation.timestamp}`,
-        latitude: conversation.latitude || 0,
-        longitude: conversation.longitude || 0,
-        location_name: conversation.location_name || 'Journal Entry',
-        message: conversation.message,
-        response: conversation.response,
-        photo_url: conversation.photo_url,
-        timestamp: conversation.timestamp,
-        date: item.date
+    const openDayView = (day: DailyConversation) => {
+      // Construct a ConversationLocation-like object containing the day's details
+      const convLoc: ConversationLocation = {
+        id: `${day.date}_day`,
+        latitude: 0,
+        longitude: 0,
+        location_name: `Journal for ${day.date}`,
+        message: day.conversations && day.conversations.length > 0 ? day.conversations[0].message : 'Journal Day',
+        response: day.diarySummary || '',
+        photo_url: day.images && day.images.length > 0 ? day.images[0] : undefined,
+        timestamp: day.conversations && day.conversations[0] ? day.conversations[0].timestamp : '',
+        date: day.date,
+        total_conversations: day.totalMessages,
+        conversations: day.conversations,
+        all_messages: day.conversations ? day.conversations.map(c => c.message) : [],
+        all_responses: day.conversations ? day.conversations.map(c => c.response) : [],
       };
-      setSelectedConversation(conversationLocation);
+
+      setSelectedConversation(convLoc);
+      setFullPageMode(true);
       setShowConversationModal(true);
     };
 
+    
+
     return (
-      <View style={styles.dailyConversationCard}>
+  <TouchableOpacity activeOpacity={0.95} onPress={() => openDayView(item)}>
+        <View style={styles.dailyConversationCard}>
         <View style={styles.dailyConversationHeader}>
           <Text style={styles.dailyConversationDate}>{formattedDate}</Text>
-          <View style={styles.dailyConversationStats}>
-            <MaterialCommunityIcons name="message-text" size={16} color="#666" />
-            <Text style={styles.dailyConversationCount}>{item.totalMessages} messages</Text>
-            {item.locations.length > 0 && (
-              <>
-                <MaterialCommunityIcons name="map-marker" size={16} color="#666" />
-                <Text style={styles.dailyConversationLocations}>{item.locations.length} locations</Text>
-              </>
-            )}
-          </View>
         </View>
 
-        {/* Show preview of conversations */}
+        {/* Show centralized diary summary for the day + thumbnails of all images */}
         <View style={styles.conversationPreviewContainer}>
-          {item.conversations.slice(0, 3).map((conversation, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={styles.conversationPreviewCard}
-              onPress={() => handleConversationPress(conversation)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.conversationPreviewContent}>
-                <Text style={styles.conversationPreviewMessage} numberOfLines={2}>
-                  {conversation.message}
-                </Text>
-                <Text style={styles.conversationPreviewResponse} numberOfLines={3}>
-                  {conversation.response}
-                </Text>
-                {conversation.location_name && (
-                  <View style={styles.conversationPreviewLocation}>
-                    <MaterialCommunityIcons name="map-marker" size={12} color="#999" />
-                    <Text style={styles.conversationPreviewLocationText} numberOfLines={1}>
-                      {conversation.location_name}
-                    </Text>
-                  </View>
-                )}
-              </View>
+          {item.diarySummary ? (
+            <Text style={styles.dailyDiarySummary} numberOfLines={5}>{item.diarySummary}</Text>
+          ) : (
+            <Text style={styles.noDiaryText}>No summary yet for this day</Text>
+          )}
 
-              {/* Image AFTER content so text always hugs the top */}
-              {conversation.photo_url && (
-                <Image 
-                  source={{ uri: conversation.photo_url }} 
-                  style={[styles.conversationPreviewImage, { marginTop: 8, marginBottom: 0 }]}
-                  resizeMode="cover"
-                />
-              )}
-            </TouchableOpacity>
-          ))}
-          
-          {item.conversations.length > 3 && (
-            <View style={styles.moreConversationsCard}>
-              <MaterialCommunityIcons name="dots-horizontal" size={24} color="#999" />
-              <Text style={styles.moreConversationsText}>
-                +{item.conversations.length - 3} more
-              </Text>
-            </View>
+          {item.images && item.images.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+                  {item.images.map((img, idx) => {
+                    return (
+                      <TouchableOpacity
+                        key={`${item.date}_img_${idx}`}
+                        onPress={() => openDayView(item)}
+                        activeOpacity={0.8}
+                        style={{ marginRight: 8 }}
+                      >
+                        <Image
+                          source={{ uri: img }}
+                          style={styles.dailyThumbnail}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
+            </ScrollView>
           )}
         </View>
       </View>
+      </TouchableOpacity>
     );
   };
 
@@ -456,17 +586,24 @@ export default function JournalScreen() {
                   onPress={() => handleMarkerPress(conversationLocation)}
                 >
                   <View style={journalStyles.markerWrapper}>
-                    <View style={[journalStyles.markerBubble, { backgroundColor: '#007AFF' }]}> 
-                      <MaterialCommunityIcons name="message-text" size={18} color="white" />
-                      {conversationLocation.total_conversations && conversationLocation.total_conversations > 1 && (
-                        <View style={styles.conversationCountBadge}>
-                          <Text style={styles.conversationCountText}>
-                            {conversationLocation.total_conversations}
-                          </Text>
+                    {/* Show image-based pin */}
+                    <View style={journalStyles.markerBubbleLarge}>
+                      {conversationLocation.photo_url ? (
+                        <Image source={{ uri: conversationLocation.photo_url }} style={journalStyles.markerImage} />
+                      ) : (
+                        <View style={[journalStyles.markerImage, { backgroundColor: '#E5E5EA', justifyContent: 'center', alignItems: 'center' }]}>
+                          <MaterialCommunityIcons name="image-outline" size={24} color="#8E8E93" />
                         </View>
                       )}
                     </View>
-                    <View style={[journalStyles.markerPointer, { borderTopColor: '#007AFF' }]} />
+                    {conversationLocation.total_conversations && conversationLocation.total_conversations > 1 && (
+                      <View style={journalStyles.markerBadge}>
+                        <Text style={[styles.conversationCountText, { fontSize: 10 }]}>
+                          {conversationLocation.total_conversations}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={[journalStyles.markerPointer, { borderTopColor: 'transparent' }]} />
                   </View>
                 </Marker>
               ))}
@@ -523,6 +660,7 @@ export default function JournalScreen() {
             <Animated.View 
               style={[
                 journalStyles.pinDetailModalContent,
+                fullPageMode ? { height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0 } : {},
                 {
                   transform: [{ translateY: modalTranslateY }],
                   opacity: modalOpacity,
@@ -531,167 +669,133 @@ export default function JournalScreen() {
             >
               {selectedConversation && (
                 <View style={{ flex: 1 }}>
-                {/* Fixed Header */}
-                <View 
-                  style={[journalStyles.pinDetailHeader, { backgroundColor: '#007AFF' }]}
-                  {...panResponder.panHandlers}
-                >
-                  <View style={journalStyles.pinDetailHeaderContent}>
-                    <View style={journalStyles.pinDetailIconContainer}>
-                      <MaterialCommunityIcons name="message-text" size={32} color="white" />
-                    </View>
-                    <View style={journalStyles.pinDetailHeaderText}>
-                      <Text style={journalStyles.pinDetailTitle}>
-                        {selectedConversation.location_name || 'Journal Entry'}
-                      </Text>
-                      <Text style={journalStyles.pinDetailTime}>
-                        {formatRelativeTime(selectedConversation.timestamp)}
-                      </Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity 
-                    onPress={handleCloseConversationDetail} 
-                    style={journalStyles.closeButton}
+                  {/* Fixed Header */}
+                  <View 
+                    style={[journalStyles.pinDetailHeader, { backgroundColor: '#007AFF' }]}
+                    {...panResponder.panHandlers}
                   >
-                    <MaterialCommunityIcons name="close" size={24} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Scrollable Content */}
-                <ScrollView 
-                  showsVerticalScrollIndicator={true}
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{ paddingBottom: 20 }}
-                >
-                  {/* Photo */}
-                  {selectedConversation.photo_url && (
-                    <View style={journalStyles.pinDetailImageContainer}>
-                      <Image 
-                        source={{ uri: selectedConversation.photo_url }} 
-                        style={journalStyles.pinDetailImage}
-                        resizeMode="cover"
-                      />
+                    <View style={journalStyles.pinDetailHeaderContent}>
+                      <View style={journalStyles.pinDetailIconContainer}>
+                        <MaterialCommunityIcons name="message-text" size={32} color="white" />
+                      </View>
+                      <View style={journalStyles.pinDetailHeaderText}>
+                        <Text style={journalStyles.pinDetailTitle}>
+                          {selectedConversation.location_name || 'Journal Entry'}
+                        </Text>
+                        <Text style={journalStyles.pinDetailTime}>
+                          {selectedConversation.date ? new Date(selectedConversation.date).toLocaleDateString() : formatRelativeTime(selectedConversation.timestamp)}
+                        </Text>
+                      </View>
                     </View>
-                  )}
-
-                  {/* Conversation Content */}
-                  <View style={journalStyles.pinDetailContent}>
-                    {selectedConversation.conversations && selectedConversation.conversations.length > 1 ? (
-                      // Multiple conversations for the day
-                      <>
-                        <Text style={journalStyles.pinDetailLabel}>
-                          Daily Conversations ({selectedConversation.total_conversations} messages)
-                        </Text>
-                        <ScrollView style={{ maxHeight: 400 }}>
-                          {selectedConversation.conversations.map((conversation, index) => (
-                            <View key={index} style={styles.individualConversationCard}>
-                              <View style={styles.conversationHeader}>
-                                <Text style={styles.conversationIndex}>Message {index + 1}</Text>
-                                <Text style={styles.conversationTime}>
-                                  {new Date(conversation.timestamp).toLocaleTimeString()}
-                                </Text>
-                              </View>
-                              <Text style={journalStyles.pinDetailLabel}>Title</Text>
-                              <Text style={styles.conversationMessage}>{conversation.message}</Text>
-                              <Text style={journalStyles.pinDetailLabel}>Diary Entry</Text>
-                              <Text style={styles.conversationResponse}>{conversation.response}</Text>
-                            </View>
-                          ))}
-                        </ScrollView>
-                      </>
-                    ) : (
-                      // Single conversation
-                      <>
-                        <Text style={journalStyles.pinDetailLabel}>Title</Text>
-                        {isEditing ? (
-                          <TextInput
-                            style={styles.editTextInput}
-                            value={editableMessage}
-                            onChangeText={setEditableMessage}
-                            multiline
-                            placeholder="Enter title..."
-                          />
-                        ) : (
-                          <Text style={journalStyles.pinDetailDescription}>
-                            {selectedConversation.message}
-                          </Text>
-                        )}
-
-                        <Text style={journalStyles.pinDetailLabel}>Diary Entry</Text>
-                        {isEditing ? (
-                          <TextInput
-                            style={styles.editTextInput}
-                            value={editableResponse}
-                            onChangeText={setEditableResponse}
-                            multiline
-                            placeholder="Enter diary entry..."
-                          />
-                        ) : (
-                          <Text style={journalStyles.pinDetailDescription}>
-                            {selectedConversation.response}
-                          </Text>
-                        )}
-                      </>
-                    )}
+                    <TouchableOpacity 
+                      onPress={() => {
+                        handleCloseConversationDetail();
+                        setFullPageMode(false);
+                      }} 
+                      style={journalStyles.closeButton}
+                    >
+                      <MaterialCommunityIcons name="close" size={24} color="#fff" />
+                    </TouchableOpacity>
                   </View>
-                </ScrollView>
 
-                {/* Fixed Bottom Buttons */}
-                <View style={journalStyles.pinDetailBottomSection}>
-                  {isEditing ? (
-                    <>
-                      <TouchableOpacity 
-                        style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#34C759', marginRight: 8 }]}
-                        onPress={handleSaveEdit}
-                        disabled={isSaving}
-                      >
-                        <Text style={journalStyles.pinDetailDirectionsButtonText}>
-                          {isSaving ? 'Saving...' : 'Save'}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#8E8E93' }]}
-                        onPress={handleCancelEdit}
-                        disabled={isSaving}
-                      >
-                        <Text style={journalStyles.pinDetailDirectionsButtonText}>Cancel</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity 
-                        style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#007AFF', marginRight: 8 }]}
-                        onPress={handleEditPress}
-                      >
-                        <Text style={journalStyles.pinDetailDirectionsButtonText}>Edit</Text>
-                      </TouchableOpacity>
-                      {selectedConversation.latitude && selectedConversation.longitude && location && (
-                        <>
-                          <Text style={journalStyles.pinDetailDistanceButton}>
-                            {calculateDistance(location, selectedConversation.latitude, selectedConversation.longitude)} away
-                          </Text>
-                          <TouchableOpacity 
-                            style={[journalStyles.pinDetailDirectionsButton, { backgroundColor: '#007AFF' }]}
-                            onPress={async () => {
-                              const success = await handleNavigateToPin(
-                                location, 
-                                selectedConversation.latitude, 
-                                selectedConversation.longitude
-                              );
-                              if (success) {
-                                setShowConversationModal(false);
-                              }
-                            }}
-                          >
-                            <Text style={journalStyles.pinDetailDirectionsButtonText}>Get Directions</Text>
-                          </TouchableOpacity>
-                        </>
+                  {fullPageMode ? (
+                    // Full-day scrollable page view: show only photo(s) and Daily Summary (no individual messages)
+                    <ScrollView showsVerticalScrollIndicator={true} style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+                      {selectedConversation.photo_url && (
+                        <View style={{ height: 220, marginBottom: 12 }}>
+                          <Image source={{ uri: selectedConversation.photo_url }} style={{ width: '100%', height: '100%', borderRadius: 12 }} resizeMode="cover" />
+                        </View>
                       )}
-                    </>
+
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#007AFF', marginBottom: 8 }}>Daily Summary</Text>
+                      <Text style={{ fontSize: 15, color: '#333', lineHeight: 22 }}>{selectedConversation.response || selectedConversation.all_responses?.join('\n\n') || 'No summary available.'}</Text>
+
+                      {renderPhotosGallery(selectedConversation.conversations)}
+                    </ScrollView>
+                  ) : (
+                    // Original (per-conversation) modal content (photo under header removed)
+                    <ScrollView 
+                      showsVerticalScrollIndicator={true}
+                      style={{ flex: 1 }}
+                      contentContainerStyle={{ paddingBottom: 20 }}
+                    >
+                      {/* Conversation Content */}
+                      <View style={journalStyles.pinDetailContent}>
+                        {/* In card/modal view we show only the Daily Summary and Photos (no individual messages) */}
+                        <Text style={journalStyles.pinDetailLabel}>Daily Summary</Text>
+                        {/* View Diary button: switch to list view and open full-page day view */}
+                        <TouchableOpacity
+                            onPress={() => {
+                            // Try to find the actual day object from loaded dailyConversations and open that
+                            const dateKey = selectedConversation.date || (selectedConversation.timestamp ? selectedConversation.timestamp.split('T')[0] : '');
+                            const dayEntry = dailyConversations.find(d => d.date === dateKey);
+                            if (dayEntry) {
+                              const dayObj: any = {
+                                id: `${dayEntry.date}_day`,
+                                latitude: 0,
+                                longitude: 0,
+                                location_name: `Journal for ${dayEntry.date}`,
+                                message: dayEntry.conversations && dayEntry.conversations.length > 0 ? dayEntry.conversations[0].message : 'Journal Day',
+                                response: dayEntry.diarySummary || '',
+                                photo_url: dayEntry.images && dayEntry.images.length > 0 ? dayEntry.images[0] : undefined,
+                                timestamp: dayEntry.conversations && dayEntry.conversations[0] ? dayEntry.conversations[0].timestamp : '',
+                                date: dayEntry.date,
+                                total_conversations: dayEntry.totalMessages,
+                                conversations: dayEntry.conversations || [],
+                                all_messages: dayEntry.conversations ? dayEntry.conversations.map((c:any)=>c.message) : [],
+                                all_responses: dayEntry.conversations ? dayEntry.conversations.map((c:any)=>c.response) : [],
+                              };
+                              setViewMode('list');
+                              setSelectedConversation(dayObj);
+                              setFullPageMode(true);
+                              setShowConversationModal(true);
+                            } else {
+                              // Fallback: construct from selectedConversation
+                              const fallbackDate = dateKey;
+                              const dayObj: any = {
+                                id: `${fallbackDate}_day`,
+                                latitude: 0,
+                                longitude: 0,
+                                location_name: selectedConversation.location_name || `Journal for ${fallbackDate}`,
+                                message: selectedConversation.message || 'Journal Day',
+                                response: selectedConversation.response || '',
+                                photo_url: selectedConversation.photo_url,
+                                timestamp: selectedConversation.timestamp || '',
+                                date: fallbackDate,
+                                total_conversations: selectedConversation.total_conversations || (selectedConversation.conversations ? selectedConversation.conversations.length : 0),
+                                conversations: selectedConversation.conversations || [],
+                                all_messages: selectedConversation.all_messages || [],
+                                all_responses: selectedConversation.all_responses || [],
+                              };
+                              setViewMode('list');
+                              setSelectedConversation(dayObj);
+                              setFullPageMode(true);
+                              setShowConversationModal(true);
+                            }
+                            }}
+                            style={{ marginTop: 12, alignSelf: 'flex-start', backgroundColor: '#007AFF', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 }}
+                          >
+                            <Text style={{ color: '#fff', fontWeight: '600' }}>View Diary</Text>
+                          </TouchableOpacity>
+                        {selectedConversation.conversations && selectedConversation.conversations.length > 0 && (
+                          <>
+                            <Text style={{ fontSize: 16, fontWeight: '600', color: '#007AFF', marginTop: 20, marginBottom: 8 }}>Photos</Text>
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                                {selectedConversation.conversations.map((c, idx) => {
+                                  const src = c && (((c as any).photo_url) || ((c as any).photoUrl) || ((c as any).photo));
+                                  if (!src) return null;
+                                  return (
+                                    <Image key={idx} source={{ uri: src }} style={{ width: IMAGE_SIZE, height: IMAGE_SIZE * 0.75, borderRadius: 8, marginBottom: 8 }} />
+                                  );
+                                })}
+                              </View>
+                          </>
+                        )}
+                      </View>
+                    </ScrollView>
                   )}
                 </View>
-              </View>
-            )}
+              )}
             </Animated.View>
           </View>
         </KeyboardAvoidingView>
@@ -876,5 +980,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     minHeight: 80,
     textAlignVertical: 'top',
+  },
+  dailyDiarySummary: {
+    fontSize: 15,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  noDiaryText: {
+    fontSize: 13,
+    color: '#8E8E93',
+  },
+  dailyThumbnail: {
+    width: 120,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: '#e9ecef',
   },
 });
