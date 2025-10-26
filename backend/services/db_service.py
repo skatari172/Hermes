@@ -3,6 +3,8 @@ from services.firebase_client import db
 from google.cloud import firestore
 from datetime import datetime, date
 from typing import Optional, Dict, List
+import asyncio
+import inspect
 
 def save_cultural_summary(user_id: str, session_id: str, cultural_data: dict):
     """
@@ -81,6 +83,19 @@ def save_conversation_entry(uid: str, entry: dict):
             })
     
     print(f"✅ Successfully saved conversation entry for user {uid} on {entry_date}")
+
+    # After saving a conversation entry, asynchronously attempt to generate a diary
+    # entry for the user's journal. This runs in the background so the request
+    # that triggered the save does not block on LLM generation.
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(generate_and_save_diary_for_user(uid))
+    except RuntimeError:
+        # No running loop (e.g., invoked outside async context) - schedule via asyncio
+        try:
+            asyncio.create_task(generate_and_save_diary_for_user(uid))
+        except Exception as e:
+            print(f"⚠️ Could not schedule diary generation task: {e}")
 
 def get_daily_conversations(uid: str, date_filter: Optional[str] = None) -> Dict:
     """
@@ -236,3 +251,118 @@ def update_journal_entry(uid: str, timestamp: str, summary: str, diary: Optional
         return True
     
     return False
+
+
+async def generate_and_save_diary_for_user(uid: str):
+    """
+    Generate a diary entry from the user's recent conversations and save it
+    into the matching conversation entry's `diary` field inside the user's
+    `journal` document.
+
+    This function is resilient to different conversation storage shapes:
+    - date-keyed lists (e.g., { '2025-10-26': [entries] })
+    - a top-level 'conversation' array
+    """
+    try:
+        from utils.gemini_client import gemini_client
+        from services.firebase_client import db
+
+        doc_ref = db.collection('journal').document(uid)
+        doc = doc_ref.get()
+        if not doc.exists:
+            print(f"ℹ️ No journal document for user {uid}, skipping diary generation")
+            return
+
+        doc_data = doc.to_dict()
+
+        # Flatten conversation entries from possible layouts
+        conversations = []
+        # If there's a 'conversation' array, use it
+        if isinstance(doc_data.get('conversation'), list):
+            conversations = doc_data.get('conversation', [])
+        else:
+            # Otherwise, gather all list-typed values (date-keyed)
+            for k, v in doc_data.items():
+                if isinstance(v, list):
+                    conversations.extend(v)
+
+        if not conversations:
+            print(f"ℹ️ No conversations to summarize for user {uid}")
+            return
+
+        # Try to find an existing summary that doesn't yet have a diary
+        conversation_summary = None
+        target_timestamp = None
+        for entry in reversed(conversations):
+            if entry.get('summary') and not entry.get('diary'):
+                conversation_summary = entry.get('summary')
+                target_timestamp = entry.get('timestamp')
+                break
+
+        # If none found, create one from recent responses/summaries
+        if not conversation_summary:
+            recent_entries = conversations[-5:] if len(conversations) >= 5 else conversations
+            entry_summaries = []
+            for entry in recent_entries:
+                if entry.get('summary') and not entry.get('diary'):
+                    entry_summaries.append(entry.get('summary'))
+
+            if entry_summaries:
+                conversation_summary = ' | '.join(entry_summaries)
+                target_timestamp = recent_entries[-1].get('timestamp')
+
+        if not conversation_summary:
+            print(f"ℹ️ Could not build a conversation summary for user {uid}")
+            return
+
+        # Build prompt for LLM
+        prompt = f"""Transform this conversation summary into a personal, reflective diary entry.\n\nWrite in first person, introspective and emotionally aware, in 2–3 paragraphs.\nInclude insights, feelings, or reflections on what was learned or experienced.\n\nConversation Summary: {conversation_summary}"""
+
+        # Call gemini_client.generate_text() - support sync or async implementations
+        try:
+            diary_text = None
+            if inspect.iscoroutinefunction(gemini_client.generate_text):
+                diary_text = await gemini_client.generate_text(prompt)
+            else:
+                diary_text = gemini_client.generate_text(prompt)
+
+            if not diary_text:
+                print(f"⚠️ Gemini returned empty diary for user {uid}")
+                return
+        except Exception as gen_err:
+            print(f"⚠️ Diary generation failed for user {uid}: {gen_err}")
+            return
+
+        # Find the matching conversation entry and set diary field
+        updated = False
+        # If doc_data has 'conversation' array, update in-place
+        if isinstance(doc_data.get('conversation'), list):
+            for entry in doc_data['conversation']:
+                if entry.get('timestamp') == target_timestamp:
+                    entry['diary'] = diary_text
+                    updated = True
+                    break
+        else:
+            # Search date-keyed lists
+            for date_key, convs in list(doc_data.items()):
+                if isinstance(convs, list):
+                    for idx, entry in enumerate(convs):
+                        if entry.get('timestamp') == target_timestamp:
+                            doc_data[date_key][idx]['diary'] = diary_text
+                            updated = True
+                            break
+                    if updated:
+                        break
+
+        if updated:
+            try:
+                # Overwrite the document with the updated structure
+                doc_ref.set(doc_data, merge=False)
+                print(f"✅ Diary saved for user {uid} (timestamp={target_timestamp})")
+            except Exception as save_err:
+                print(f"⚠️ Failed to save diary for user {uid}: {save_err}")
+        else:
+            print(f"⚠️ Could not find matching conversation entry to attach diary for user {uid}")
+
+    except Exception as e:
+        print(f"⚠️ Unexpected error in generate_and_save_diary_for_user for {uid}: {e}")
