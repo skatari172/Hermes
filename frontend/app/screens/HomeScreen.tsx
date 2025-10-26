@@ -608,6 +608,7 @@ export default function HomeScreen() {
               style={[styles.ttsToggle, ttsEnabled && styles.ttsToggleActive]}
               onPress={() => setTtsEnabled(!ttsEnabled)}
               accessibilityLabel="Toggle TTS"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons
                 name="volume-high"
@@ -787,7 +788,10 @@ const styles = StyleSheet.create({
     color: '#01AFD1',
     fontSize: 18,
     fontWeight: '600',
-    zIndex: 10,
+    zIndex: 0,
+    // Allow touches to pass through the centered title so right/left controls remain tappable
+    // RN supports pointerEvents via style on some platforms; we keep zIndex low and also
+    // set an explicit pointerEvents on the element in JSX if needed.
   },
   menuButton: {
     padding: 8,

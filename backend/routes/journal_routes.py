@@ -134,6 +134,7 @@ def get_user_conversations(
 
 @router.get("/conversations/all")
 def get_all_users_conversations(
+    request: Request,
     uid: str = Depends(get_user_id),
     limit: int = 50
 ):
@@ -242,6 +243,22 @@ def get_all_users_conversations(
         
         print(f"✅ Returning {len(limited_conversations)} conversations from {len(user_profiles)} users\n")
         
+        # Normalize any photo URLs in the returned conversations and avatars
+        try:
+            for entry in limited_conversations:
+                # Normalize photo on the conversation entry
+                if entry.get('photo_url'):
+                    entry['photo_url'] = _normalize_photo_url(entry['photo_url'], request)
+                if entry.get('photoUrl'):
+                    entry['photoUrl'] = _normalize_photo_url(entry['photoUrl'], request)
+
+                # Normalize user avatar if present in user_profile
+                up = entry.get('user_profile')
+                if up and up.get('avatar'):
+                    up['avatar'] = _normalize_photo_url(up['avatar'], request)
+        except Exception:
+            pass
+
         return {
             "conversations": limited_conversations,
             "total_count": len(unique_conversations),

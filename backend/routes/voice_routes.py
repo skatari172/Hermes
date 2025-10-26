@@ -42,22 +42,27 @@ async def text_to_speech(
     try:
         logger.info(f"TTS request for user {user_id}: {text[:50]}...")
         
-        # Generate audio
+        # Generate audio bytes
         audio_bytes = await elevenlabs_client.text_to_speech(
             text=text,
             voice_id=voice_id,
             speed=speed
         )
-        
-        # Return audio as streaming response
-        return StreamingResponse(
-            io.BytesIO(audio_bytes),
-            media_type="audio/mpeg",
-            headers={
-                "Content-Disposition": "inline; filename=hermes_response.mp3",
-                "Cache-Control": "no-cache"
-            }
-        )
+
+        # Return base64-encoded audio in JSON for easier consumption by mobile clients
+        try:
+            b64 = base64.b64encode(audio_bytes).decode('utf-8')
+            return {"status": "success", "audio_data": b64}
+        except Exception:
+            # Fallback to streaming response if base64 encoding fails
+            return StreamingResponse(
+                io.BytesIO(audio_bytes),
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Disposition": "inline; filename=hermes_response.mp3",
+                    "Cache-Control": "no-cache"
+                }
+            )
         
     except Exception as e:
         logger.error(f"TTS error: {str(e)}")
