@@ -19,6 +19,7 @@ class ElevenLabsClient:
     
     def __init__(self):
         self.api_key = settings.elevenlabs_api_key
+        self.default_voice_id = settings.elevenlabs_voice_id
         if not self.api_key:
             # Don't raise error, just log warning
             print("⚠️ ELEVENLABS_API_KEY not found - TTS will not work")
@@ -49,7 +50,7 @@ class ElevenLabsClient:
             
             # Use the client's text_to_speech.convert method (correct API)
             audio_generator = self.client.text_to_speech.convert(
-                voice_id=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
+                voice_id=voice_id or self.default_voice_id,
                 text=text,
                 model_id=model,
                 output_format="mp3_44100_128"  # Standard MP3 format
@@ -88,7 +89,7 @@ class ElevenLabsClient:
             
             # Use the client's text_to_speech.convert method with streaming
             audio_stream = self.client.text_to_speech.convert(
-                voice_id=voice_id or "pNInz6obpgDQGcFmaJgB",  # Default Adam voice
+                voice_id=voice_id or self.default_voice_id,
                 text=text,
                 model_id=model,
                 output_format="mp3_44100_128",  # Standard MP3 format

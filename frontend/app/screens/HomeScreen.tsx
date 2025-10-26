@@ -240,6 +240,11 @@ export default function HomeScreen() {
             };
             setMessages(prev => [...prev, botMessage]);
 
+            // Trigger TTS for bot response if enabled
+            if (ttsEnabled) {
+              handleTtsForMessage(result.response);
+            }
+
             // Handle TTS if enabled and audio data is available
             console.log('TTS Debug: ttsEnabled =', ttsEnabled);
             console.log('TTS Debug: result.tts_audio_data exists =', !!result.tts_audio_data);
@@ -559,6 +564,11 @@ export default function HomeScreen() {
             };
             setMessages(prev => [...prev, botMessage]);
   
+            // Trigger TTS for bot response if enabled
+            if (ttsEnabled) {
+              handleTtsForMessage(result.response);
+            }
+
             // Handle TTS if enabled and audio data is available
             console.log('TTS Debug: ttsEnabled =', ttsEnabled);
             console.log('TTS Debug: result.tts_audio_data exists =', !!result.tts_audio_data);
@@ -690,9 +700,10 @@ export default function HomeScreen() {
     if (ttsEnabled && messageText) {
       try {
         // Use centralized apiClient to call TTS endpoint
-  const formData = new FormData();
-  formData.append('text', messageText);
-  formData.append('session_id', 'demo_session');
+        const formData = new FormData();
+        formData.append('text', messageText);
+        formData.append('session_id', 'demo_session');
+        formData.append('voice_id', 'pNInz6obpgDQGcFmaJgB');
 
         const response = await apiClient.post('/api/voice/speak', formData, {
           headers: {
@@ -703,20 +714,24 @@ export default function HomeScreen() {
         if (response && response.status === 200) {
           const result = response.data;
           if (result.status === 'success' && result.audio_data) {
-            // Play the audio
+            // Play the audio using expo-av
             const audioData = result.audio_data;
-            const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/mp3' });
-            const audioUrl = URL.createObjectURL(audioBlob);
+            const dataUrl = `data:audio/mp3;base64,${audioData}`;
             
-            const audio = new Audio(audioUrl);
-            audio.play().catch(error => {
-              console.error('Error playing TTS audio:', error);
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: dataUrl },
+              { shouldPlay: true }
+            );
+            
+            console.log('TTS: Audio started playing');
+            
+            // Clean up after playback
+            sound.setOnPlaybackStatusUpdate((status) => {
+              if (status.isLoaded && status.didJustFinish) {
+                console.log('TTS: Audio finished playing');
+                sound.unloadAsync();
+              }
             });
-            
-            // Clean up the URL after playing
-            audio.onended = () => {
-              URL.revokeObjectURL(audioUrl);
-            };
           }
         }
       } catch (error) {

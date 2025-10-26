@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     
     # ElevenLabs TTS
     elevenlabs_api_key: str = Field(default="", validation_alias="ELEVENLABS_API_KEY")
+    elevenlabs_voice_id: str = Field(default="pNInz6obpgDQGcFmaJgB", validation_alias="ELEVENLABS_VOICE_ID")
     
     # Backend Configuration
     backend_host: str = Field(default="localhost", validation_alias="BACKEND_HOST")
