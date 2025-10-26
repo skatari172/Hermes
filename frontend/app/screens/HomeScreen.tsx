@@ -218,10 +218,9 @@ export default function HomeScreen() {
         // Use centralized apiClient (baseURL resolved dynamically)
 
         // Send message to backend using apiClient with automatic auth
-        const formData = new FormData();
-        formData.append('user_message', messageText);
-        formData.append('user_id', 'demo_user');
-        formData.append('session_id', 'demo_session');
+  const formData = new FormData();
+  formData.append('user_message', messageText);
+  formData.append('session_id', 'demo_session');
 
         const response = await apiClient.post('/api/chat/', formData, {
           headers: {
@@ -240,6 +239,11 @@ export default function HomeScreen() {
               isUser: false
             };
             setMessages(prev => [...prev, botMessage]);
+
+            // Trigger TTS for bot response if enabled
+            if (ttsEnabled) {
+              handleTtsForMessage(result.response);
+            }
 
             // Handle TTS if enabled and audio data is available
             console.log('TTS Debug: ttsEnabled =', ttsEnabled);
@@ -393,7 +397,6 @@ export default function HomeScreen() {
         type: 'image/jpeg',
         name: 'image.jpg',
       } as any);
-      formData.append('user_id', 'demo_user');
       formData.append('session_id', 'demo_session');
       
       // Add current location if available
@@ -539,10 +542,9 @@ export default function HomeScreen() {
   
       try {
         // Use centralized apiClient (baseURL resolved dynamically)
-        const formData = new FormData();
-        formData.append('user_message', transcribedText.trim());
-        formData.append('user_id', 'demo_user');
-        formData.append('session_id', 'demo_session');
+  const formData = new FormData();
+  formData.append('user_message', transcribedText.trim());
+  formData.append('session_id', 'demo_session');
 
         const response = await apiClient.post('/api/chat/', formData, {
           headers: {
@@ -562,6 +564,11 @@ export default function HomeScreen() {
             };
             setMessages(prev => [...prev, botMessage]);
   
+            // Trigger TTS for bot response if enabled
+            if (ttsEnabled) {
+              handleTtsForMessage(result.response);
+            }
+
             // Handle TTS if enabled and audio data is available
             console.log('TTS Debug: ttsEnabled =', ttsEnabled);
             console.log('TTS Debug: result.tts_audio_data exists =', !!result.tts_audio_data);
@@ -695,8 +702,8 @@ export default function HomeScreen() {
         // Use centralized apiClient to call TTS endpoint
         const formData = new FormData();
         formData.append('text', messageText);
-        formData.append('user_id', 'demo_user');
         formData.append('session_id', 'demo_session');
+        formData.append('voice_id', 'pNInz6obpgDQGcFmaJgB');
 
         const response = await apiClient.post('/api/voice/speak', formData, {
           headers: {
@@ -707,20 +714,24 @@ export default function HomeScreen() {
         if (response && response.status === 200) {
           const result = response.data;
           if (result.status === 'success' && result.audio_data) {
-            // Play the audio
+            // Play the audio using expo-av
             const audioData = result.audio_data;
-            const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/mp3' });
-            const audioUrl = URL.createObjectURL(audioBlob);
+            const dataUrl = `data:audio/mp3;base64,${audioData}`;
             
-            const audio = new Audio(audioUrl);
-            audio.play().catch(error => {
-              console.error('Error playing TTS audio:', error);
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: dataUrl },
+              { shouldPlay: true }
+            );
+            
+            console.log('TTS: Audio started playing');
+            
+            // Clean up after playback
+            sound.setOnPlaybackStatusUpdate((status) => {
+              if (status.isLoaded && status.didJustFinish) {
+                console.log('TTS: Audio finished playing');
+                sound.unloadAsync();
+              }
             });
-            
-            // Clean up the URL after playing
-            audio.onended = () => {
-              URL.revokeObjectURL(audioUrl);
-            };
           }
         }
       } catch (error) {

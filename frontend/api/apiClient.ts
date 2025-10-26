@@ -40,36 +40,15 @@ const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use(
   async (config) => {
     try {
-      // Check if user is authenticated with Firebase
+      // Only attach Authorization header when a real Firebase user is present.
       const currentUser = auth.currentUser;
       if (currentUser) {
-        // Get the Firebase ID token
         const token = await currentUser.getIdToken();
         config.headers.Authorization = `Bearer ${token}`;
-      } else {
-        // Fallback to device-specific demo token for unauthenticated users
-        let demoUserId = await AsyncStorage.getItem('demo_user_id');
-        if (!demoUserId) {
-          demoUserId = Math.random().toString(36).substring(2, 15);
-          await AsyncStorage.setItem('demo_user_id', demoUserId);
-        }
-        config.headers.Authorization = `Bearer demo_device_${demoUserId}`;
       }
     } catch (error) {
-      console.error('Error getting auth token:', error);
-      // Fallback to demo mode if Firebase fails
-      try {
-        let demoUserId = await AsyncStorage.getItem('demo_user_id');
-        if (!demoUserId) {
-          demoUserId = Math.random().toString(36).substring(2, 15);
-          await AsyncStorage.setItem('demo_user_id', demoUserId);
-        }
-        config.headers.Authorization = `Bearer demo_device_${demoUserId}`;
-      } catch (storageError) {
-        console.error('Error with AsyncStorage:', storageError);
-        // Final fallback - use random session ID
-        config.headers.Authorization = `Bearer demo_device_${Math.random().toString(36).substring(2, 15)}`;
-      }
+      // If token retrieval fails, do not attach a demo fallback token. Let server reject unauthorized requests.
+      console.error('Error getting auth token (no fallback):', error);
     }
     return config;
   },

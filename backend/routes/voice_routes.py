@@ -3,7 +3,8 @@ Voice interaction routes for Hermes AI Cultural Companion.
 Handles speech-to-text and text-to-speech endpoints.
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from utils.auth_util import verify_firebase_token
 from fastapi.responses import StreamingResponse
 from typing import Optional
 import asyncio
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/api/voice", tags=["voice"])
 async def text_to_speech(
     text: str = Form(...),
     voice_id: Optional[str] = Form(None),
-    user_id: str = Form(...),
+    user_id: str = Depends(verify_firebase_token),
     session_id: str = Form(...)
 ):
     """
@@ -63,7 +64,7 @@ async def text_to_speech(
 async def text_to_speech_stream(
     text: str = Form(...),
     voice_id: Optional[str] = Form(None),
-    user_id: str = Form(...),
+    user_id: str = Depends(verify_firebase_token),
     session_id: str = Form(...)
 ):
     """
@@ -109,7 +110,7 @@ async def text_to_speech_stream(
 @router.post("/chat")
 async def voice_chat(
     message: str = Form(...),
-    user_id: str = Form(...),
+    user_id: str = Depends(verify_firebase_token),
     session_id: str = Form(...),
     voice_id: Optional[str] = Form(None),
     stream_audio: bool = Form(False)
@@ -145,7 +146,7 @@ async def get_available_voices():
 @router.post("/transcribe")
 async def transcribe_audio(
     audio_file: UploadFile = File(...),
-    user_id: str = Form(default="demo_user"),
+    user_id: str = Depends(verify_firebase_token),
     session_id: str = Form(default="demo_session")
 ):
     """
@@ -243,7 +244,7 @@ async def transcribe_audio(
 
 @router.post("/clear-context")
 async def clear_conversation_context(
-    user_id: str = Form(...),
+    user_id: str = Depends(verify_firebase_token),
     session_id: str = Form(...)
 ):
     """
