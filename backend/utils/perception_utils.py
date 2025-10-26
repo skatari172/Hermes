@@ -49,15 +49,24 @@ async def analyze_image_with_translation(image_data: str, image_format: str = "b
         # Create image object
         image = Image.open(BytesIO(image_bytes))
         
-        # Prompt that prioritizes translation
+        # Prompt that prioritizes translation with emphasis
         prompt = """Analyze this image with special focus on text translation and cultural context. 
 
-PRIORITY ORDER:
-1. TRANSLATE any foreign text you see (signs, menus, documents, etc.)
+CRITICAL PRIORITY - TRANSLATION FIRST:
+1. **MOST IMPORTANT**: Scan for and TRANSLATE every piece of foreign text you see (signs, menus, documents, building names, street signs, etc.)
+   - Look carefully for ANY text visible in the image
+   - Translate ALL foreign language text to English
+   - Include both original text and translation
 2. Identify cultural landmarks, monuments, or significant buildings
 3. Analyze architectural styles and cultural elements
 4. Note any religious, historical, or cultural symbols
 5. Describe the scene and atmosphere
+
+STRICT FORMATTING RULES FOR YOUR OUTPUT:
+- NO asterisks (*) in any output text
+- NO bold formatting in responses
+- Plain text only in all fields
+- NEVER mention coordinates, latitude, or longitude
 
 Provide your analysis in this JSON format:
 {
@@ -73,7 +82,7 @@ Provide your analysis in this JSON format:
     "cultural_notes": ["interesting cultural observations"]
 }
 
-Focus heavily on translating any text you see!"""
+CRITICAL: Translate ANY foreign text you see - this is your TOP priority! Focus heavily on detecting and translating text in the image!"""
         
         response = model.generate_content([prompt, image])
         response_text = response.text.strip()
