@@ -599,32 +599,22 @@ export default function HomeScreen() {
       {/* Top Banner */}
       <View style={styles.topBanner}>
         <View style={styles.headerContent}>
-          <TouchableOpacity style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.upgradeButton}>
-            <Text style={styles.upgradeText}>Hermes</Text>
-          </TouchableOpacity>
+          {/* Hermes perfectly centered */}
+          <Text style={styles.hermesTitleAbsolute}>Hermes</Text>
+
           <View style={styles.headerRightContainer}>
-            <TouchableOpacity 
+            {/* TTS moved to the right where the ellipsis used to be */}
+            <TouchableOpacity
               style={[styles.ttsToggle, ttsEnabled && styles.ttsToggleActive]}
               onPress={() => setTtsEnabled(!ttsEnabled)}
+              accessibilityLabel="Toggle TTS"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons 
-                name="volume-high" 
-                size={20} 
-                color={ttsEnabled ? "#FFFFFF" : "#01AFD1"} 
+              <Ionicons
+                name="volume-high"
+                size={20}
+                color={ttsEnabled ? '#FFFFFF' : '#01AFD1'}
               />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.ttsToggle}
-              onPress={handleGenerateJournal}
-              accessibilityLabel="Generate journal from latest"
-            >
-              <Ionicons name="book-outline" size={20} color="#01AFD1" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.menuButton}>
-              <Ionicons name="ellipsis-horizontal" size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -755,6 +745,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  centerHeader: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 40,
+  },
+  hermesTitle: {
+    color: '#01AFD1',
+    fontSize: 18,
+    fontWeight: '600',
+    marginRight: 8,
+  },
   ttsToggle: {
     padding: 8,
     marginRight: 8,
@@ -763,6 +766,32 @@ const styles = StyleSheet.create({
   },
   ttsToggleActive: {
     backgroundColor: '#01AFD1',
+  },
+  ttsToggleCentered: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ttsToggleActiveCentered: {
+    backgroundColor: '#01AFD1',
+  },
+  leftSpacer: {
+    width: 40,
+  },
+  hermesTitleAbsolute: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    color: '#01AFD1',
+    fontSize: 18,
+    fontWeight: '600',
+    zIndex: 0,
+    // Allow touches to pass through the centered title so right/left controls remain tappable
+    // RN supports pointerEvents via style on some platforms; we keep zIndex low and also
+    // set an explicit pointerEvents on the element in JSX if needed.
   },
   menuButton: {
     padding: 8,
@@ -780,19 +809,25 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: '80%',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
   },
   userMessage: {
     alignSelf: 'flex-end',
     backgroundColor: '#01AFD1',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   botMessage: {
     alignSelf: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5ECFF',
+    borderColor: '#E9F2FB',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   imageMessageContainer: {
     maxWidth: '80%',
@@ -817,7 +852,8 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
+    letterSpacing: 0.1,
   },
   userMessageText: {
     color: '#FFFFFF',
@@ -827,8 +863,8 @@ const styles = StyleSheet.create({
   },
   timestamp: {
     fontSize: 12,
-    color: '#043263',
-    marginTop: 4,
+    color: '#6B7A8A',
+    marginTop: 6,
   },
   timestampRight: {
     textAlign: 'right',
@@ -839,20 +875,24 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   messageImage: {
-    width: 200,
-    height: 200,
-    borderRadius: 15,
+    width: 210,
+    height: 210,
+    borderRadius: 12,
     marginBottom: 8,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5ECFF',
-    minHeight: 60,
+    minHeight: 64,
+    borderTopWidth: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 4,
   },
   loadingMessage: {
     paddingHorizontal: 16,

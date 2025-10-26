@@ -62,22 +62,40 @@ async def create_journal_entry(context_result: dict, user_id: str, session_id: s
         entity = context_result.get("entity", "Unknown Entity")
         coordinates = context_result.get("coordinates", {})
         
-        # Create a comprehensive summary for the journal
+        # Create a comprehensive summary for the journal.
+        # NOTE: Do NOT include raw coordinate values in the human-readable summary.
+        # Journal summaries should be based on the textual cultural summary and
+        # contextual perception data only (per user's privacy and clarity request).
         journal_summary = f"Cultural Discovery: {entity}\n\n"
-        journal_summary += f"Location: {coordinates.get('lat', 'Unknown')}, {coordinates.get('lng', 'Unknown')}\n\n"
         journal_summary += f"Summary: {cultural_summary}\n\n"
+        # Optionally include short perception notes if available
+        perception_notes = context_result.get("perception_data", {}).get("cultural_notes", [])
+        if perception_notes:
+            journal_summary += "Notes: " + ("; ".join(perception_notes)) + "\n\n"
         journal_summary += f"Discovered through AI cultural analysis and image recognition."
         
         # Prepare journal entry request
         journal_entry = {
-            "photo_url": "placeholder_image_url",  # You can replace with actual image URL
             "summary": journal_summary,
             "timestamp": datetime.utcnow().isoformat(),
             "session_id": session_id,
             "entity": entity,
+            # Keep coordinates in the stored document for mapping UI, but do not
+            # use them when generating textual summaries.
             "coordinates": coordinates,
             "cultural_notes": context_result.get("perception_data", {}).get("cultural_notes", [])
         }
+
+        # Only include a photo_url if an actual image URL/path is provided in the
+        # context_result. This avoids saving placeholder values into Firestore.
+        photo = (
+            context_result.get("photo_url") or
+            context_result.get("image_url") or
+            context_result.get("photo") or
+            context_result.get("photoUrl")
+        )
+        if photo:
+            journal_entry["photo_url"] = photo
         
         # Call journal route to save entry
         try:

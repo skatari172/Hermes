@@ -10,6 +10,10 @@ def build_comprehensive_context(lat: float, lng: float, perception_clues: dict, 
     try:
         print("🧠 Building comprehensive context...")
         
+        # Check if geo_context has error
+        if geo_context.get("error"):
+            print(f"⚠️ Geo context has error: {geo_context.get('error')}")
+        
         # Extract key information
         scene_summary = perception_clues.get("scene_summary", "")
         translated_text = perception_clues.get("translated_text", [])
@@ -32,6 +36,14 @@ def build_comprehensive_context(lat: float, lng: float, perception_clues: dict, 
         if cultural_landmarks:
             cultural_summary += f"\n\nCultural Landmarks: {', '.join(cultural_landmarks)}"
         
+        # Log landmarks for debugging
+        landmarks = geo_context.get("landmarks", [])
+        if landmarks:
+            print(f"📍 Found {len(landmarks)} nearby landmarks: {[lm.get('title', lm.get('name', 'Unknown')) for lm in landmarks[:3]]}")
+        else:
+            print("⚠️ No nearby landmarks found")
+        
+        # Include geo_context data directly accessible
         return {
             "success": True,
             "entity": entity,
@@ -40,7 +52,9 @@ def build_comprehensive_context(lat: float, lng: float, perception_clues: dict, 
             "certainty": 0.8,
             "cultural_summary": cultural_summary,
             "coordinates": {"lat": lat, "lng": lng},
-            "geo_context": geo_context,
+            "geo": geo_context,  # Make it accessible via .get('geo')
+            "geo_context": geo_context,  # Keep for compatibility
+            "location_api": geo_context,  # Also available here
             "perception_data": perception_clues,
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -56,7 +70,9 @@ def build_comprehensive_context(lat: float, lng: float, perception_clues: dict, 
             "certainty": 0.0,
             "cultural_summary": "Unable to build context",
             "coordinates": {"lat": lat, "lng": lng},
+            "geo": geo_context,  # Make it accessible
             "geo_context": geo_context,
+            "location_api": geo_context,
             "perception_data": perception_clues
         }
 

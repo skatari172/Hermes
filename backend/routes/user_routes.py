@@ -21,20 +21,33 @@ def _normalize_photo_url(photo_url: str, request: Request) -> str:
         parsed = urlparse(photo_url)
         hostname = parsed.hostname
 
-        # If already absolute http(s) URL, return as-is
+        # If it's an absolute http(s) URL, check whether it points to a local/private host
         if parsed.scheme and parsed.scheme.startswith('http'):
+            try:
+                base_req = urlparse(str(request.base_url))
+                req_host = base_req.hostname
+            except Exception:
+                req_host = None
+
+            # If the URL hostname is localhost or a typical private IP range, rewrite to request base
+            if hostname and (
+                hostname == 'localhost' or
+                hostname.startswith('127.') or
+                hostname.startswith('10.') or
+                hostname.startswith('192.168.') or
+                hostname == req_host
+            ):
+                base = str(request.base_url)
+                return urljoin(base, parsed.path.lstrip('/'))
+
+            # Otherwise, assume it's a reachable public URL and return as-is
             return photo_url
 
         # If path starts with uploads/ (local static files), serve via request base
         path = photo_url.lstrip('/')
-        if path.startswith('uploads'):
+        if path.startswith('uploads') or path.startswith('profile'):
             base = str(request.base_url)
             return urljoin(base, path)
-
-        # If hostname indicates localhost, rewrite to request base
-        if hostname in ("localhost", "127.0.0.1"):
-            base = str(request.base_url)
-            return urljoin(base, parsed.path.lstrip('/'))
 
         # If this looks like a storage path (e.g., 'profile/uid.jpg' or 'uploads/uid/...') and we have a bucket name, construct a GCS URL
         if hasattr(storage_client, 'bucket_name') and storage_client.bucket_name:
